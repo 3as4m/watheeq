@@ -20,7 +20,7 @@ export default function Auth({ mode }: { mode: 'login' | 'signup' }) {
         const { error } = await supabase.auth.signInWithPassword({ email, password })
         if (error) throw new Error(error.message === 'Invalid login credentials' ? 'البريد الإلكتروني أو كلمة المرور غير صحيحة' : error.message)
       } else {
-        const { data, error } = await supabase.auth.signUp({ email, password, options: { data: { full_name: name.trim() } } })
+        const { data, error } = await supabase.auth.signUp({ email, password, options: { data: { full_name: name.trim() }, emailRedirectTo: window.location.origin } })
         if (error) throw error
         if (!data.session) setNotice('أرسلنا رابط التفعيل إلى بريدك الإلكتروني. افتحه ثم سجل الدخول.')
       }
