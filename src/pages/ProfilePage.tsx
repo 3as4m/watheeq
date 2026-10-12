@@ -6,6 +6,7 @@ import PostCard from '../components/PostCard'
 import { Mark, OutlineMark, PatternBand } from '../components/brand'
 import { Avatar, Empty, ErrorNote, Spinner } from '../components/ui'
 import { useAuth } from '../lib/auth'
+import { useCommunity } from '../lib/community'
 import { fetchPosts, PAGE_SIZE } from '../lib/queries'
 import { supabase } from '../lib/supabase'
 import type { Member, Profile } from '../lib/types'
@@ -17,6 +18,7 @@ const roleLabel = { owner: 'مؤسس المجتمع', admin: 'مدير المج�
 export default function ProfilePage() {
   const { username = '' } = useParams()
   const { session, refresh } = useAuth()
+  const { community } = useCommunity()
   const uid = session!.user.id
   const qc = useQueryClient()
   const fileRef = useRef<HTMLInputElement>(null)
@@ -24,22 +26,22 @@ export default function ProfilePage() {
   const [form, setForm] = useState({ display_name: '', bio: '', location: '' })
 
   const data = useQuery({
-    queryKey: ['profile', username],
+    queryKey: ['profile', community.id, username],
     queryFn: async () => {
       const { data: p, error } = await supabase.from('profiles').select('*').eq('username', username).maybeSingle()
       if (error) throw error
       if (!p) return null
-      const { data: m } = await supabase.from('members').select('*').eq('user_id', p.id).maybeSingle()
+      const { data: m } = await supabase.from('members').select('*').eq('user_id', p.id).eq('community_id', community.id).maybeSingle()
       return { profile: p as Profile, member: (m ?? null) as Member | null }
     },
   })
 
   const authorId = data.data?.profile.id
   const posts = useInfiniteQuery({
-    queryKey: ['posts', 'author', authorId],
+    queryKey: ['posts', community.id, 'author', authorId],
     enabled: !!authorId,
     initialPageParam: 0,
-    queryFn: ({ pageParam }) => fetchPosts({ uid, page: pageParam, authorId }),
+    queryFn: ({ pageParam }) => fetchPosts({ uid, communityId: community.id, page: pageParam, authorId }),
     getNextPageParam: (last, all) => (last.length === PAGE_SIZE ? all.length : undefined),
   })
 
@@ -48,7 +50,7 @@ export default function ProfilePage() {
       const { error } = await supabase.from('profiles').update(patch).eq('id', uid)
       if (error) throw error
     },
-    onSuccess: () => { setEditing(false); qc.invalidateQueries({ queryKey: ['profile', username] }); qc.invalidateQueries({ queryKey: ['posts'] }); refresh() },
+    onSuccess: () => { setEditing(false); qc.invalidateQueries({ queryKey: ['profile'] }); qc.invalidateQueries({ queryKey: ['posts'] }); refresh() },
   })
 
   const changeAvatar = useMutation({
@@ -99,7 +101,7 @@ export default function ProfilePage() {
           ) : (
             <div className="mt-4">
               <h1 className="text-2xl font-bold text-brand">{p.display_name}</h1>
-              <p className="mt-0.5 inline-block border-b border-mint pb-0.5 text-sm text-mint-deep">{member && member.role !== 'member' ? roleLabel[member.role] : 'عضو في مجتمع وثيق'}</p>
+              <p className="mt-0.5 inline-block border-b border-mint pb-0.5 text-sm text-mint-deep">{member && member.role !== 'member' ? roleLabel[member.role] : `عضو في ${community.name}`}</p>
               {p.bio && <p className="mt-4 max-w-xl whitespace-pre-wrap text-[15px] leading-7 text-ink/85">{p.bio}</p>}
               {p.location && <p className="mt-3 flex items-center gap-1.5 text-sm text-muted"><MapPin className="size-4" />{p.location}</p>}
             </div>

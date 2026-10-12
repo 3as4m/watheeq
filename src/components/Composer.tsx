@@ -2,18 +2,18 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ImagePlus, PenLine, X } from 'lucide-react'
 import { useRef, useState, type FormEvent } from 'react'
 import { useAuth } from '../lib/auth'
+import { useCommunity } from '../lib/community'
 import { supabase } from '../lib/supabase'
 import type { Category } from '../lib/types'
 import { uploadImage } from '../lib/upload'
 import { Avatar, ErrorNote } from './ui'
 
 export function useCategories() {
-  const { community } = useAuth()
+  const { community } = useCommunity()
   return useQuery({
-    queryKey: ['categories', community?.id],
-    enabled: !!community,
+    queryKey: ['categories', community.id],
     queryFn: async () => {
-      const { data, error } = await supabase.from('categories').select('*').order('position')
+      const { data, error } = await supabase.from('categories').select('*').eq('community_id', community.id).order('position')
       if (error) throw error
       return data as Category[]
     },
@@ -21,7 +21,8 @@ export function useCategories() {
 }
 
 export default function Composer() {
-  const { community, profile, session } = useAuth()
+  const { profile, session } = useAuth()
+  const { community } = useCommunity()
   const qc = useQueryClient()
   const cats = useCategories()
   const fileRef = useRef<HTMLInputElement>(null)
@@ -38,7 +39,7 @@ export default function Composer() {
   const create = useMutation({
     mutationFn: async () => {
       const { error } = await supabase.from('posts').insert({
-        community_id: community!.id, title: title.trim(), body: body.trim(), media, category_id: categoryId || null,
+        community_id: community.id, title: title.trim(), body: body.trim(), media, category_id: categoryId || null,
       })
       if (error) throw error
     },

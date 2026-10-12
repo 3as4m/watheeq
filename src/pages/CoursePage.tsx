@@ -1,10 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, ArrowRight, Check, CheckCircle2, Eye, EyeOff, Lock, Pencil, Plus, Trash2 } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Check, CheckCircle2, ClipboardCheck, Eye, EyeOff, Lock, Pencil, Plus, Trash2 } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { OutlineMark } from '../components/brand'
+import { LessonQuiz } from '../components/Quiz'
 import { Empty, ErrorNote, Spinner } from '../components/ui'
 import { useAuth } from '../lib/auth'
+import { useCommunity, useTo } from '../lib/community'
 import { supabase } from '../lib/supabase'
 import type { Course, Lesson, Module } from '../lib/types'
 import { embedUrl, isHttpUrl, levelFor } from '../lib/utils'
@@ -45,7 +47,9 @@ export default function CoursePage() {
   const { id = '' } = useParams()
   const [sp, setSp] = useSearchParams()
   const qc = useQueryClient()
-  const { session, member, isStaff, isAdmin } = useAuth()
+  const { session } = useAuth()
+  const { community, member, isStaff, isAdmin } = useCommunity()
+  const to = useTo()
   const level = levelFor(member?.points ?? 0)
   const [editing, setEditing] = useState<{ moduleId: string; lesson?: Lesson } | null>(null)
   const [newModule, setNewModule] = useState('')
@@ -53,7 +57,8 @@ export default function CoursePage() {
   const course = useQuery({
     queryKey: ['course', id],
     queryFn: async () => {
-      const { data, error } = await supabase.from('courses').select('*, modules(*, lessons(*))').eq('id', id).single()
+      const { data, error } = await supabase.from('courses').select('*, modules(*, lessons(*))').eq('id', id).eq('community_id', community.id).maybeSingle()
+      if (!data && !error) return null
       if (error) throw error
       const c = data as unknown as Course & { modules: Module[] }
       c.modules.sort((a, b) => a.position - b.position)
@@ -68,6 +73,19 @@ export default function CoursePage() {
       const { data, error } = await supabase.from('lesson_progress').select('lesson_id')
       if (error) throw error
       return new Set(data.map((r) => r.lesson_id as string))
+    },
+  })
+
+  // Which lessons carry a quiz, and whether the viewer has passed it (sidebar markers).
+  const quizzes = useQuery({
+    queryKey: ['course-quizzes', id, session!.user.id],
+    enabled: !!course.data,
+    queryFn: async () => {
+      const lessonIds = course.data!.modules.flatMap((m) => m.lessons.map((l) => l.id))
+      if (!lessonIds.length) return new Map<string, boolean>()
+      const { data, error } = await supabase.from('quizzes').select('lesson_id, quiz_attempts(passed)').in('lesson_id', lessonIds).eq('quiz_attempts.user_id', session!.user.id)
+      if (error) throw error
+      return new Map((data as unknown as { lesson_id: string; quiz_attempts: { passed: boolean }[] }[]).map((q) => [q.lesson_id, q.quiz_attempts.some((a) => a.passed)]))
     },
   })
 
@@ -116,7 +134,7 @@ export default function CoursePage() {
 
   return (
     <div>
-      <Link to="/classroom" className="group mb-4 inline-flex items-center gap-1.5 text-sm font-medium text-muted transition-colors hover:text-brand">
+      <Link to={to('/classroom')} className="group mb-4 inline-flex items-center gap-1.5 text-sm font-medium text-muted transition-colors hover:text-brand">
         <ArrowRight className="size-4 transition-transform group-hover:translate-x-1" />المكتبة التربوية
       </Link>
 
@@ -150,7 +168,7 @@ export default function CoursePage() {
           <span className="grid size-14 place-items-center rounded-full bg-brand-soft text-brand"><Lock className="size-6" /></span>
           <p className="text-lg font-bold text-brand">هذه الدورة تفتح عند المستوى {c.min_level}</p>
           <p className="max-w-sm text-sm text-muted">مستواك الحالي {level}. شارك في المجتمع بمنشورات وتعليقات نافعة لتجمع النقاط وترتفع مستوياتك.</p>
-          <Link to="/" className="btn-primary mt-2">اذهب إلى المجتمع<ArrowLeft className="size-4" /></Link>
+          <Link to={to('/')} className="btn-primary mt-2">اذهب إلى المجتمع<ArrowLeft className="size-4" /></Link>
         </div>
       ) : (
         <div className="grid gap-8 lg:grid-cols-[1fr_330px]">
@@ -189,6 +207,7 @@ export default function CoursePage() {
             ) : (
               <Empty title="لا توجد دروس بعد" hint={isAdmin ? 'أضف وحدة ثم أضف إليها الدروس.' : undefined} />
             )}
+            {!editing && current && <div className="mt-6"><LessonQuiz key={current.id} lessonId={current.id} lessonTitle={current.title} /></div>}
           </section>
 
           <aside className="space-y-4 lg:sticky lg:top-24 lg:self-start">
@@ -220,6 +239,10 @@ export default function CoursePage() {
                             ? <span className="grid size-5 shrink-0 place-items-center rounded-full bg-mint text-white"><Check className="size-3" strokeWidth={3} /></span>
                             : <span className={`size-5 shrink-0 rounded-full border-2 ${on ? 'border-brand' : 'border-line'}`} />}
                           <span className="flex-1 leading-snug">{l.title}</span>
+                          {quizzes.data?.has(l.id) && (
+                            <ClipboardCheck aria-label={quizzes.data.get(l.id) ? 'اختبار ناجح' : 'يتضمن اختبارًا'}
+                              className={`size-4 shrink-0 ${quizzes.data.get(l.id) ? 'text-mint-deep' : 'text-peri'}`} />
+                          )}
                           {!l.published && <span className="tag bg-cloud text-muted">مخفي</span>}
                         </button>
                         {isAdmin && (

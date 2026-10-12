@@ -2,17 +2,9 @@
 import 'dotenv/config'
 import fs from 'node:fs'
 import path from 'node:path'
-import pg from 'pg'
+import { dbClient } from './db.mjs'
 
-const ref = process.env.SUPABASE_PROJECT_REF
-const client = new pg.Client({
-  host: `db.${ref}.supabase.co`,
-  port: 5432,
-  user: 'postgres',
-  password: process.env.SUPABASE_DB_PASSWORD,
-  database: 'postgres',
-  ssl: { rejectUnauthorized: false },
-})
+const client = dbClient()
 
 const dir = path.resolve('supabase/migrations')
 const files = fs.readdirSync(dir).filter((f) => f.endsWith('.sql')).sort()

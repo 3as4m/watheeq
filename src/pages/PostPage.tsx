@@ -5,6 +5,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import PostCard from '../components/PostCard'
 import { Avatar, ErrorNote, LikeButton, Spinner } from '../components/ui'
 import { useAuth } from '../lib/auth'
+import { useCommunity, useTo } from '../lib/community'
 import { AUTHOR_FIELDS, fetchPost } from '../lib/queries'
 import { supabase } from '../lib/supabase'
 import type { Comment } from '../lib/types'
@@ -16,12 +17,14 @@ export default function PostPage() {
   const { id = '' } = useParams()
   const nav = useNavigate()
   const qc = useQueryClient()
-  const { session, isStaff } = useAuth()
+  const { session } = useAuth()
+  const { community, isStaff } = useCommunity()
+  const to = useTo()
   const uid = session!.user.id
   const [text, setText] = useState('')
   const [replyTo, setReplyTo] = useState<Comment | null>(null)
 
-  const post = useQuery({ queryKey: ['post', id], queryFn: () => fetchPost(id, uid) })
+  const post = useQuery({ queryKey: ['post', id], queryFn: () => fetchPost(id, uid, community.id) })
 
   const comments = useQuery({
     queryKey: ['comments', id],
@@ -30,6 +33,7 @@ export default function PostPage() {
         .from('comments')
         .select(`*, author:profiles!comments_author_id_fkey(${AUTHOR_FIELDS})`)
         .eq('post_id', id)
+        .eq('author.members.community_id', community.id)
         .order('created_at')
       if (error) throw error
       const list = data as unknown as Comment[]
@@ -73,7 +77,7 @@ export default function PostPage() {
 
   const delPost = useMutation({
     mutationFn: async () => { const { error } = await supabase.from('posts').delete().eq('id', id); if (error) throw error },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['posts'] }); nav('/') },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['posts'] }); nav(to('/')) },
   })
 
   const pin = useMutation({
@@ -95,12 +99,12 @@ export default function PostPage() {
   const renderComment = (c: CommentWithLike, isReply = false) => (
     <div key={c.id} className={`animate-rise ${isReply ? 'mt-4' : 'border-t border-line pt-5 first:border-t-0 first:pt-0'}`}>
       <div className="flex gap-3">
-        <Link to={`/u/${c.author.username}`} className="shrink-0">
+        <Link to={to(`/u/${c.author.username}`)} className="shrink-0">
           <Avatar name={c.author.display_name} src={c.author.avatar_url} size={isReply ? 32 : 38} level={isReply ? undefined : authorLevel(c.author)} />
         </Link>
         <div className="min-w-0 flex-1">
           <p className="flex flex-wrap items-baseline gap-x-2 leading-snug">
-            <Link to={`/u/${c.author.username}`} className="text-sm font-bold text-brand hover:underline">{c.author.display_name}</Link>
+            <Link to={to(`/u/${c.author.username}`)} className="text-sm font-bold text-brand hover:underline">{c.author.display_name}</Link>
             <span className="text-xs text-peri">{timeAgo(c.created_at)}</span>
           </p>
           <p className="mt-1 whitespace-pre-wrap break-words text-[15px] leading-7 text-ink/90">{c.body}</p>
@@ -126,7 +130,7 @@ export default function PostPage() {
   return (
     <div className="mx-auto max-w-2xl space-y-5">
       <div className="flex items-center justify-between">
-        <Link to="/" className="group inline-flex items-center gap-1.5 text-sm font-medium text-muted transition-colors hover:text-brand">
+        <Link to={to('/')} className="group inline-flex items-center gap-1.5 text-sm font-medium text-muted transition-colors hover:text-brand">
           <ArrowRight className="size-4 transition-transform group-hover:translate-x-1" />العودة للمجتمع
         </Link>
         <div className="flex gap-1">

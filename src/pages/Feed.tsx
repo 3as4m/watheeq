@@ -7,28 +7,31 @@ import Composer, { useCategories } from '../components/Composer'
 import PostCard from '../components/PostCard'
 import { Empty, ErrorNote, LevelBadge, Spinner } from '../components/ui'
 import { useAuth } from '../lib/auth'
+import { useCommunity, useTo } from '../lib/community'
 import { fetchPosts, PAGE_SIZE } from '../lib/queries'
 import { supabase } from '../lib/supabase'
 import { formatNumber, levelFor, nextLevelAt, LEVEL_STARTS } from '../lib/utils'
 
 export default function Feed() {
-  const { session, community, member } = useAuth()
+  const { session } = useAuth()
+  const { community, member } = useCommunity()
+  const to = useTo()
   const uid = session!.user.id
   const cats = useCategories()
   const [categoryId, setCategoryId] = useState<string | null>(null)
 
   const posts = useInfiniteQuery({
-    queryKey: ['posts', 'feed', categoryId],
+    queryKey: ['posts', community.id, 'feed', categoryId],
     initialPageParam: 0,
-    queryFn: ({ pageParam }) => fetchPosts({ uid, page: pageParam, categoryId }),
+    queryFn: ({ pageParam }) => fetchPosts({ uid, communityId: community.id, page: pageParam, categoryId }),
     getNextPageParam: (last, all) => (last.length === PAGE_SIZE ? all.length : undefined),
   })
   const items = posts.data?.pages.flat() ?? []
 
   const nextEvent = useQuery({
-    queryKey: ['events', 'next'],
+    queryKey: ['events', community.id, 'next'],
     queryFn: async () => {
-      const { data } = await supabase.from('events').select('id,title,starts_at').gte('starts_at', new Date().toISOString()).order('starts_at').limit(1).maybeSingle()
+      const { data } = await supabase.from('events').select('id,title,starts_at').eq('community_id', community.id).gte('starts_at', new Date().toISOString()).order('starts_at').limit(1).maybeSingle()
       return data as { id: string; title: string; starts_at: string } | null
     },
   })
@@ -85,7 +88,7 @@ export default function Feed() {
             <PatternBand className="h-10" animated />
           </div>
 
-          <Link to="/leaderboard" className="card card-hover block p-5">
+          <Link to={to('/leaderboard')} className="card card-hover block p-5">
             <div className="flex items-center justify-between">
               <p className="kicker">مستواك</p>
               <LevelBadge level={lvl} />
@@ -99,7 +102,7 @@ export default function Feed() {
           </Link>
 
           {nextEvent.data && (
-            <Link to="/calendar" className="card card-hover flex items-center gap-4 p-5">
+            <Link to={to(`/calendar/${nextEvent.data.id}`)} className="card card-hover flex items-center gap-4 p-5">
               <span className="grid size-12 shrink-0 place-items-center rounded-md bg-mint-soft text-mint-deep"><CalendarDays className="size-5" /></span>
               <span className="min-w-0">
                 <span className="kicker block">اللقاء القادم</span>

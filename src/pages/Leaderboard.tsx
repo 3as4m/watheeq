@@ -5,6 +5,7 @@ import { Link } from 'react-router-dom'
 import { OutlineMark } from '../components/brand'
 import { Avatar, Empty, ErrorNote, LevelBadge, PageTitle, Spinner } from '../components/ui'
 import { useAuth } from '../lib/auth'
+import { useCommunity, useTo } from '../lib/community'
 import { supabase } from '../lib/supabase'
 import { formatNumber, LEVEL_STARTS, levelFor, nextLevelAt } from '../lib/utils'
 
@@ -24,14 +25,15 @@ const podium = [
 ]
 
 export default function Leaderboard() {
-  const { community, member, session } = useAuth()
+  const { session } = useAuth()
+  const { community, member } = useCommunity()
+  const to = useTo()
   const [days, setDays] = useState(7)
 
   const board = useQuery({
-    queryKey: ['leaderboard', community?.id, days],
-    enabled: !!community,
+    queryKey: ['leaderboard', community.id, days],
     queryFn: async () => {
-      const { data, error } = await supabase.rpc('leaderboard', { cid: community!.id, days: days || null })
+      const { data, error } = await supabase.rpc('leaderboard', { cid: community.id, days: days || null })
       if (error) throw error
       return data as Row[]
     },
@@ -65,7 +67,7 @@ export default function Leaderboard() {
                 const r = top[rank - 1]
                 if (!r) return <div key={rank} />
                 return (
-                  <Link key={rank} to={`/u/${r.username}`} className="group flex animate-rise flex-col items-center text-center" style={{ animationDelay: `${[150, 0, 300][i]}ms` }}>
+                  <Link key={rank} to={to(`/u/${r.username}`)} className="group flex animate-rise flex-col items-center text-center" style={{ animationDelay: `${[150, 0, 300][i]}ms` }}>
                     <Avatar name={r.display_name} src={r.avatar_url} size={rank === 1 ? 68 : 54} level={r.level} />
                     <span className="mt-2 line-clamp-1 text-sm font-bold text-brand group-hover:underline">{r.display_name}</span>
                     <span className="text-xs text-muted tabular-nums">{formatNumber(r.points)} نقطة</span>
@@ -85,8 +87,8 @@ export default function Leaderboard() {
                   return (
                     <li key={r.user_id} style={{ animationDelay: `${(i + 3) * 40}ms` }} className={`flex animate-rise items-center gap-3 px-4 py-3 ${me ? 'bg-mint-soft/60' : ''}`}>
                       <span className="w-7 text-center text-lg font-bold text-peri tabular-nums">{i + 4}</span>
-                      <Link to={`/u/${r.username}`}><Avatar name={r.display_name} src={r.avatar_url} size={40} level={r.level} /></Link>
-                      <Link to={`/u/${r.username}`} className="min-w-0 flex-1 truncate font-bold text-brand hover:underline">{r.display_name}{me && <span className="ms-2 text-xs font-medium text-mint-deep">(أنت)</span>}</Link>
+                      <Link to={to(`/u/${r.username}`)}><Avatar name={r.display_name} src={r.avatar_url} size={40} level={r.level} /></Link>
+                      <Link to={to(`/u/${r.username}`)} className="min-w-0 flex-1 truncate font-bold text-brand hover:underline">{r.display_name}{me && <span className="ms-2 text-xs font-medium text-mint-deep">(أنت)</span>}</Link>
                       <span className="text-sm font-bold text-brand tabular-nums">{formatNumber(r.points)}<span className="ms-1 text-xs font-medium text-muted">نقطة</span></span>
                     </li>
                   )

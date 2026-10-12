@@ -5,6 +5,7 @@ import { Search } from 'lucide-react'
 import { OutlineMark, PatternBand } from '../components/brand'
 import { Avatar, Empty, ErrorNote, LevelBadge, PageTitle, Spinner } from '../components/ui'
 import { useAuth } from '../lib/auth'
+import { useCommunity, useTo } from '../lib/community'
 import { supabase } from '../lib/supabase'
 import type { Member, ProfileLite, Role } from '../lib/types'
 import { formatNumber } from '../lib/utils'
@@ -14,16 +15,19 @@ const roleLabel: Record<Role, string> = { owner: 'مؤسس المجتمع', admi
 type Row = Member & { profile: ProfileLite }
 
 export default function Members() {
-  const { session, isAdmin } = useAuth()
+  const { session } = useAuth()
+  const { community, isAdmin } = useCommunity()
+  const to = useTo()
   const qc = useQueryClient()
   const [q, setQ] = useState('')
 
   const list = useQuery({
-    queryKey: ['members'],
+    queryKey: ['members', community.id],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('members')
         .select('*, profile:profiles!members_user_id_fkey(id,username,display_name,avatar_url)')
+        .eq('community_id', community.id)
         .order('points', { ascending: false })
       if (error) throw error
       return data as unknown as Row[]
@@ -32,7 +36,7 @@ export default function Members() {
 
   const setRole = useMutation({
     mutationFn: async ({ uid, role }: { uid: string; role: Role }) => {
-      const { error } = await supabase.from('members').update({ role }).eq('user_id', uid)
+      const { error } = await supabase.from('members').update({ role }).eq('community_id', community.id).eq('user_id', uid)
       if (error) throw error
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['members'] }),
@@ -48,7 +52,7 @@ export default function Members() {
           <input className="input ps-9" placeholder="ابحث عن عضو..." value={q} onChange={(e) => setQ(e.target.value)} aria-label="بحث" />
         </div>
       </PageTitle>
-      {list.data && <p className="-mt-4 mb-6 text-sm text-muted">{formatNumber(list.data.length)} عضو في مجتمع وثيق</p>}
+      {list.data && <p className="-mt-4 mb-6 text-sm text-muted">{formatNumber(list.data.length)} عضو في {community.name}</p>}
       <ErrorNote error={list.error ?? setRole.error} />
       {list.isLoading ? <Spinner /> : rows.length === 0 ? <Empty title="لا نتائج" hint="جرّب اسمًا آخر." /> : (
         <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -56,13 +60,13 @@ export default function Members() {
             <li key={r.user_id} style={{ animationDelay: `${Math.min(i, 12) * 40}ms` }}
               className="card card-hover relative flex animate-rise flex-col overflow-hidden text-center">
               <OutlineMark className="absolute -end-8 -top-6 w-[85%]" color="#297289" opacity={0.18} />
-              <Link to={`/u/${r.profile.username}`} className="relative flex flex-1 flex-col items-center px-4 pb-4 pt-7">
+              <Link to={to(`/u/${r.profile.username}`)} className="relative flex flex-1 flex-col items-center px-4 pb-4 pt-7">
                 <span className="relative grid size-24 place-items-center">
                   <span className="absolute inset-0.5 rotate-45 rounded-[0_50%_50%_50%] bg-brand" />
                   <span className="relative"><Avatar name={r.profile.display_name} src={r.profile.avatar_url} size={70} /></span>
                 </span>
                 <span className="mt-4 line-clamp-1 font-bold text-brand">{r.profile.display_name}</span>
-                <span className="mt-0.5 border-b border-mint pb-0.5 text-xs text-mint-deep">{r.role === 'member' ? 'عضو في مجتمع وثيق' : roleLabel[r.role]}</span>
+                <span className="mt-0.5 border-b border-mint pb-0.5 text-xs text-mint-deep">{r.role === 'member' ? 'عضو في المجتمع' : roleLabel[r.role]}</span>
                 <span className="mt-3"><LevelBadge points={r.points} /></span>
               </Link>
               {isAdmin && r.role !== 'owner' && r.user_id !== session!.user.id && (

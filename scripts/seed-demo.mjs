@@ -1,19 +1,13 @@
 // Fills the community with realistic demo content so it doesn't look empty.
 //   npm run db:seed          add demo members, courses, posts, events
+//   npm run db:seed -- --extras  add demo quizzes, quiz attempts and attendance (on top of an existing seed)
 //   npm run db:seed -- --clean   remove everything this script added
 // Demo accounts have no password and are banned, so nobody can sign in as them.
 // Every row created here is recorded in private.demo_seed so --clean removes exactly that.
 import 'dotenv/config'
-import pg from 'pg'
+import { dbClient } from './db.mjs'
 
-const client = new pg.Client({
-  host: `db.${process.env.SUPABASE_PROJECT_REF}.supabase.co`,
-  port: 5432,
-  user: 'postgres',
-  password: process.env.SUPABASE_DB_PASSWORD,
-  database: 'postgres',
-  ssl: { rejectUnauthorized: false },
-})
+const client = dbClient()
 
 const people = {
   salma: { name: 'د. سلمى الحربي', bio: 'مستشارة أسرية وتربوية، أرافق الأسر منذ خمسة عشر عامًا.', location: 'الدوحة', role: 'moderator', extra: 610 },
@@ -195,6 +189,148 @@ const events = [
   { in: 17, hour: 20, mins: 60, title: 'جلسة حوارية: كيف نتحدث مع المراهق؟', description: 'جلسة لأولياء أمور المراهقين، نتشارك فيها التجارب ونتعلم كيف نبقى قريبين من أبنائنا في هذه المرحلة.', rsvp: ['mohammed'] },
 ]
 
+const mainCommunity = async () => (await client.query(`select id from public.communities where slug = 'watheeq'`)).rows[0].id
+
+// Quizzes hang off lessons by title. kind defaults to single choice; `a` is the index (or indexes) of the right options.
+const quizzes = [
+  { lesson: 'بين التربية بالخوف والتربية بالفهم', title: 'اختبار: الخوف أم الفهم؟', questions: [
+    { q: 'ما الذي تصنعه التربية بالخوف غالبًا؟', o: ['قناعة تبقى مع الطفل حين يكبر', 'طاعة سريعة تختفي حين يغيب الرقيب', 'ثقة أكبر بالنفس', 'حوارًا أعمق بين الطفل ووالديه'], a: 1,
+      e: 'الخوف يصنع طاعة قصيرة العمر، أما الفهم فيصنع قناعة تبقى.' },
+    { q: 'شرح سبب الطلب للطفل يعني إلغاء الحدود.', o: ['صحيح', 'خطأ'], a: 1, e: 'الفهم لا يلغي الحدود، بل يشرحها بلغة يفهمها الطفل.' },
+    { q: 'أي العبارات تعبّر عن التربية بالفهم؟', kind: 'multiple', o: ['«افعل هذا لأنني قلت ذلك»', '«نطفئ الشاشة الآن لأن عينيك تحتاجان إلى راحة»', '«سأشرح لك لماذا نرتب الغرفة»', '«إن لم تفعل فستُعاقب»'], a: [1, 2] },
+  ] },
+  { lesson: 'ميثاق الأسرة: اكتب قيم بيتك', title: 'اختبار: ميثاق الأسرة', questions: [
+    { q: 'ما فائدة كتابة قيم البيت؟', o: ['تزيين الجدار', 'نستطيع أن نعود إليها ونحاسب أنفسنا عليها', 'إلزام الأطفال وحدهم بها', 'لا فائدة منها'], a: 1 },
+    { q: 'كم مرة يُقترح مراجعة الميثاق مع العائلة؟', o: ['كل يوم', 'كل شهر', 'مرة في السنة', 'عند حدوث مشكلة فقط'], a: 1 },
+    { q: 'اكتب قيمتين تريد أن يكبر عليهما أبناؤك، وسلوكًا يوميًا يدل على كل منهما.', kind: 'text' },
+  ] },
+  { lesson: 'المراهقة: الصديق قبل الموجّه', title: 'اختبار: مرحلة المراهقة', questions: [
+    { q: 'ابتعاد المراهق عن والديه أحيانًا هو:', o: ['علامة على فشل التربية', 'جزء طبيعي من بحثه عن هويته', 'سبب لفرض رقابة أشد', 'أمر يجب معاقبته عليه'], a: 1 },
+    { q: 'ما الذي ينصح به الدرس مع المراهق؟', kind: 'multiple', o: ['أن تستمع أكثر مما تتكلم', 'أن تحترم خصوصيته', 'أن تقرأ رسائله دون علمه', 'أن تكون من يعود إليه حين يخطئ'], a: [0, 1, 3] },
+  ] },
+  { lesson: 'تسمية المشاعر', title: 'اختبار: قاموس المشاعر', questions: [
+    { q: 'لماذا يصرخ الطفل أو يضرب أحيانًا؟', o: ['لأنه عنيد بطبعه', 'لأنه لا يعرف اسم ما يشعر به', 'لأنه يريد لفت الانتباه فقط', 'لأنه لا يحب والديه'], a: 1 },
+    { q: 'كلما اتسع قاموس الطفل العاطفي:', o: ['زادت نوبات غضبه', 'قلّت نوبات غضبه', 'لا يتغير شيء', 'أصبح أكثر خجلًا'], a: 1 },
+    { q: 'صف موقفًا حديثًا ساعدت فيه طفلك على تسمية شعوره، وماذا حدث بعدها؟', kind: 'text' },
+  ] },
+  { lesson: 'إدارة الخلاف بهدوء', title: 'اختبار: الخلاف الهادئ', questions: [
+    { q: 'حين يشتد الخلاف، ما الأولوية؟', o: ['الوصول إلى حل فورًا', 'التهدئة', 'إثبات من المخطئ', 'رفع الصوت لإنهاء النقاش'], a: 1 },
+    { q: 'رتّب الحوار بعد الهدوء: ما أول سؤال؟', o: ['ماذا نفعل في المرة القادمة؟', 'ما الذي حدث؟', 'من بدأ؟', 'لماذا لا تسمع الكلام؟'], a: 1 },
+  ] },
+  { lesson: 'إصلاح العلاقة بعد الخطأ', title: 'اختبار: إصلاح العلاقة', questions: [
+    { q: 'اعتذار الوالد لطفله بعد الخطأ:', o: ['ينقص من هيبته', 'يعلّم الطفل أن الخطأ يُصلح', 'يجعل الطفل يتمادى', 'غير ضروري'], a: 1, e: 'الاعتذار يعلّم الطفل أن الحب لا يزول بالخلاف.' },
+    { q: 'التعلق الآمن يحتاج إلى والدين مثاليين لا يخطئان.', o: ['صحيح', 'خطأ'], a: 1 },
+  ] },
+]
+
+const reflections = [
+  'الصدق: نقول الحقيقة حتى لو كانت صعبة. والرحمة: نساعد أخانا الصغير في واجباته دون أن يطلب.',
+  'المسؤولية: كل واحد يرتب سريره صباحًا. والاحترام: لا نقاطع من يتكلم على مائدة العشاء.',
+  'ابني غضب لأن أخته أخذت لعبته، قلت له: يبدو أنك غاضب لأنها أخذتها دون إذن. هدأ بسرعة وطلبها منها بنفسه.',
+  'ابنتي كانت تبكي قبل المدرسة، سألتها هل تشعرين بالخوف؟ قالت نعم من الاختبار، فتكلمنا عنه وذهبت أهدأ.',
+  'الامتنان: نذكر كل ليلة شيئًا جميلًا حدث اليوم. والتعاون: الكل يشارك في تجهيز السفرة.',
+]
+
+const pastEvents = [
+  { in: -23, hour: 20, mins: 60, title: 'لقاء: الروتين اليومي للأطفال', description: 'تحدثنا عن بناء روتين صباحي ومسائي يخفف التوتر في البيت.', rsvp: ['noura', 'sara', 'reem', 'hind', 'khalid'] },
+  { in: -16, hour: 20, mins: 75, title: 'ورشة: لغة التشجيع', description: 'تدربنا فيها على مدح الجهد بدل النتيجة، مع أمثلة من بيوت الأعضاء.', rsvp: ['noura', 'sara', 'abdulrahman', 'mohammed', 'hind', 'reem'] },
+]
+
+// Deterministic-ish randomness so reruns look similar.
+let seedN = 7
+const rand = () => { seedN = (seedN * 16807) % 2147483647; return seedN / 2147483647 }
+
+async function extras() {
+  await client.query('create table if not exists private.demo_seed (kind text not null, id uuid not null)')
+  if ((await client.query(`select count(*)::int n from private.demo_seed where kind = 'quiz'`)).rows[0].n) { console.log('demo quizzes already present'); return }
+  const track = (kind, id) => client.query('insert into private.demo_seed values ($1, $2)', [kind, id])
+  const cid = await mainCommunity()
+  const demo = (await client.query(`select u.id, u.email from auth.users u join private.demo_seed d on d.id = u.id and d.kind = 'user'`)).rows
+  const uid = Object.fromEntries(demo.map((r) => [r.email.replace(/^demo-|@watheeq\.invalid$/g, ''), r.id]))
+  const skill = { salma: 0.95, noura: 0.85, sara: 0.8, reem: 0.7, hind: 0.75, khalid: 0.6, mohammed: 0.55, abdulrahman: 0.5 }
+
+  let quizCount = 0, attemptCount = 0
+  for (const z of quizzes) {
+    const lesson = (await client.query(
+      `select l.id from public.lessons l join public.modules m on m.id = l.module_id join public.courses c on c.id = m.course_id
+        where c.community_id = $1 and l.title = $2 limit 1`, [cid, z.lesson])).rows[0]
+    if (!lesson) continue
+    const qs = z.questions.map((x) => {
+      const kind = x.kind ?? 'single'
+      const options = kind === 'text' ? [] : x.o.map((t, i) => ({ id: String.fromCharCode(97 + i), text: t }))
+      const correct = kind === 'text' ? [] : [x.a].flat().map((i) => String.fromCharCode(97 + i))
+      return { kind, prompt: x.q, options, correct, explanation: x.e ?? '' }
+    })
+    // save_quiz checks is_admin(), so run it under a platform admin's JWT claims.
+    const admin = (await client.query('select user_id from public.platform_admins limit 1')).rows[0].user_id
+    await client.query(`select set_config('request.jwt.claims', $1, true)`, [JSON.stringify({ sub: admin, role: 'authenticated' })])
+    const quizId = (await client.query('select public.save_quiz($1) id', [JSON.stringify({ lesson_id: lesson.id, title: z.title, pass_score: 60, points: 5, questions: qs })])).rows[0].id
+    await track('quiz', quizId)
+    quizCount++
+    const stored = (await client.query('select id, kind, options from public.quiz_questions where quiz_id = $1 order by position', [quizId])).rows
+    const keys = new Map((await client.query('select question_id, correct from public.quiz_answer_keys where question_id = any($1)', [stored.map((x) => x.id)])).rows.map((k) => [k.question_id, k.correct]))
+
+    for (const [who, id] of Object.entries(uid)) {
+      if (rand() < 0.3) continue // not everyone takes every quiz
+      const tries = rand() < 0.3 ? 2 : 1
+      for (let t = 0; t < tries; t++) {
+        const p = Math.min(0.98, (skill[who] ?? 0.6) + t * 0.2)
+        const answers = {}
+        for (const q of stored) {
+          if (q.kind === 'text') { answers[q.id] = reflections[Math.floor(rand() * reflections.length)]; continue }
+          const right = keys.get(q.id)
+          if (rand() < p) answers[q.id] = right
+          else { const wrong = q.options.map((o) => o.id).filter((o) => !right.includes(o)); answers[q.id] = [wrong[Math.floor(rand() * wrong.length)]] }
+        }
+        await client.query('savepoint a')
+        try {
+          await client.query(`select set_config('request.jwt.claims', $1, true)`, [JSON.stringify({ sub: id, role: 'authenticated' })])
+          await client.query('select public.submit_quiz($1, $2)', [quizId, JSON.stringify(answers)])
+          await client.query('release savepoint a')
+          attemptCount++
+        } catch { await client.query('rollback to savepoint a') } // e.g. course still locked for this member's level
+      }
+    }
+  }
+  await client.query(`select set_config('request.jwt.claims', '', true)`)
+  // Spread attempts over the last three weeks, keeping each member's retake after the first try.
+  await client.query(`
+    with r as (select a.id, row_number() over (partition by a.user_id, a.quiz_id order by a.created_at) n, random() x
+                 from public.quiz_attempts a join public.quizzes q on q.id = a.quiz_id
+                where q.id in (select id from private.demo_seed where kind = 'quiz'))
+    update public.quiz_attempts a set created_at = now() - interval '21 days' * r.x + (r.n - 1) * interval '2 days'
+      from r where r.id = a.id`)
+  await client.query(`update public.point_log set created_at = now() - random() * interval '20 days' where reason = 'quiz_pass' and user_id = any($1::uuid[])`, [Object.values(uid)])
+
+  // Two more past meetups, then attendance for every past demo event.
+  for (const e of pastEvents) {
+    const start = new Date(Date.now() + e.in * day)
+    start.setUTCHours(e.hour - 3, 0, 0, 0)
+    const id = (await client.query(
+      'insert into public.events (community_id, title, description, starts_at, ends_at, created_by) values ($1, $2, $3, $4, $5, $6) returning id',
+      [cid, e.title, e.description, start, new Date(start.getTime() + e.mins * 60_000), uid.salma])).rows[0].id
+    await track('event', id)
+    for (const who of e.rsvp) await client.query('insert into public.event_rsvps (event_id, user_id) values ($1, $2)', [id, uid[who]])
+  }
+  const past = (await client.query(
+    `select e.id, e.starts_at, array(select user_id from public.event_rsvps r where r.event_id = e.id) rsvps
+       from public.events e join private.demo_seed d on d.id = e.id and d.kind = 'event' where e.starts_at < now()`)).rows
+  let marks = 0
+  for (const e of past) {
+    for (const [who, id] of Object.entries(uid)) {
+      const said = e.rsvps.includes(id)
+      const x = rand()
+      const status = said ? (x < 0.72 ? 'present' : x < 0.86 ? 'late' : x < 0.94 ? 'absent' : 'excused') : (x < 0.25 ? 'present' : x < 0.4 ? 'absent' : null)
+      if (!status) continue
+      await client.query(`insert into public.event_attendance (event_id, user_id, status, method, marked_by, marked_at) values ($1, $2, $3, $4, $5, $6)`,
+        [e.id, id, status, said && x < 0.4 ? 'self' : 'staff', uid.salma, new Date(new Date(e.starts_at).getTime() + 30 * 60_000)])
+      marks++
+    }
+  }
+  await client.query(`update public.point_log set created_at = now() - random() * interval '20 days' where reason = 'attendance' and user_id = any($1::uuid[])`, [Object.values(uid)])
+  console.log(`added ${quizCount} quizzes, ${attemptCount} quiz attempts, ${pastEvents.length} past events, ${marks} attendance marks`)
+}
+
 async function clean() {
   const has = (await client.query(`select to_regclass('private.demo_seed') as t`)).rows[0].t
   if (!has) { console.log('nothing to clean'); return }
@@ -214,10 +350,10 @@ async function seed() {
   if (already) { console.log('demo content already present; run with --clean first'); return }
   const track = (kind, id) => client.query('insert into private.demo_seed values ($1, $2)', [kind, id])
 
-  const cid = (await client.query('select id from public.communities order by created_at limit 1')).rows[0].id
+  const cid = await mainCommunity()
   const cats = Object.fromEntries((await client.query('select name, id from public.categories where community_id = $1', [cid])).rows.map((r) => [r.name, r.id]))
 
-  // Members: inserting into auth.users fires handle_new_user, which creates profile + membership.
+  // Members: inserting into auth.users fires handle_new_user, which creates the profile; membership is explicit.
   const uid = {}
   let i = 0
   for (const [key, p] of Object.entries(people)) {
@@ -233,7 +369,8 @@ async function seed() {
     uid[key] = rows[0].id
     await track('user', uid[key])
     await client.query('update public.profiles set username = $2, bio = $3, location = $4, created_at = $5 where id = $1', [uid[key], `demo_${key}`, p.bio, p.location, joined])
-    await client.query('update public.members set role = $3, joined_at = $4 where community_id = $1 and user_id = $2', [cid, uid[key], p.role ?? 'member', joined])
+    await client.query(`insert into public.members (community_id, user_id, role, joined_at) values ($1, $2, $3, $4)
+       on conflict (community_id, user_id) do update set role = excluded.role, joined_at = excluded.joined_at`, [cid, uid[key], p.role ?? 'member', joined])
     i++
   }
 
@@ -304,12 +441,14 @@ async function seed() {
   }
 
   console.log(`added ${Object.keys(people).length} demo members, ${courses.length} courses, ${posts.length} posts, ${events.length} events`)
+  await extras()
 }
 
 await client.connect()
 try {
   await client.query('begin')
   if (process.argv.includes('--clean')) await clean()
+  else if (process.argv.includes('--extras')) await extras()
   else await seed()
   await client.query('commit')
 } catch (e) {

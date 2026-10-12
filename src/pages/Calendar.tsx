@@ -1,48 +1,19 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { CalendarCheck, CalendarPlus, Check, Clock, ExternalLink, Trash2, Users } from 'lucide-react'
+import { ArrowLeft, CalendarCheck, CalendarPlus, Check, Clock, ExternalLink, Radio, UserCheck, Users } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
+import { Link } from 'react-router-dom'
 import { Empty, ErrorNote, PageTitle, Spinner } from '../components/ui'
 import { useAuth } from '../lib/auth'
+import { useCommunity, useTo } from '../lib/community'
+import { ATTENDANCE_LABEL, ATTENDANCE_TONE, checkInOpen, EVENT_SELECT, isAttended, isPast, timeOf, type EventRow } from '../lib/events'
 import { supabase } from '../lib/supabase'
-import type { EventItem } from '../lib/types'
 import { formatNumber, isHttpUrl } from '../lib/utils'
 
-type Ev = EventItem & { event_rsvps: { user_id: string }[] }
-
-export default function Calendar() {
-  const { session, community, isAdmin } = useAuth()
-  const uid = session!.user.id
+export function useEventActions(communityId: string) {
   const qc = useQueryClient()
-  const [adding, setAdding] = useState(false)
-  const [f, setF] = useState({ title: '', description: '', starts_at: '', ends_at: '', link_url: '' })
-  const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value })
-
-  const events = useQuery({
-    queryKey: ['events'],
-    queryFn: async () => {
-      const since = new Date(Date.now() - 3 * 3600_000).toISOString()
-      const { data, error } = await supabase.from('events').select('*, event_rsvps(user_id)').gte('starts_at', since).order('starts_at')
-      if (error) throw error
-      return data as unknown as Ev[]
-    },
-  })
-
-  const refresh = () => qc.invalidateQueries({ queryKey: ['events'] })
-
-  const create = useMutation({
-    mutationFn: async () => {
-      if (f.link_url && !isHttpUrl(f.link_url)) throw new Error('الرابط غير صالح')
-      const { error } = await supabase.from('events').insert({
-        community_id: community!.id, title: f.title.trim(), description: f.description.trim() || null,
-        starts_at: new Date(f.starts_at).toISOString(), ends_at: f.ends_at ? new Date(f.ends_at).toISOString() : null, link_url: f.link_url.trim() || null,
-      })
-      if (error) throw error
-    },
-    onSuccess: () => { setAdding(false); setF({ title: '', description: '', starts_at: '', ends_at: '', link_url: '' }); refresh() },
-  })
-
+  const refresh = () => { qc.invalidateQueries({ queryKey: ['events', communityId] }); qc.invalidateQueries({ queryKey: ['event'] }); qc.invalidateQueries({ queryKey: ['me'] }) }
   const rsvp = useMutation({
-    mutationFn: async (e: Ev) => {
+    mutationFn: async ({ e, uid }: { e: EventRow; uid: string }) => {
       const going = e.event_rsvps.some((r) => r.user_id === uid)
       const { error } = going
         ? await supabase.from('event_rsvps').delete().eq('event_id', e.id).eq('user_id', uid)
@@ -51,13 +22,54 @@ export default function Calendar() {
     },
     onSuccess: refresh,
   })
-
-  const remove = useMutation({
-    mutationFn: async (id: string) => { const { error } = await supabase.from('events').delete().eq('id', id); if (error) throw error },
+  const checkIn = useMutation({
+    mutationFn: async (eventId: string) => { const { error } = await supabase.rpc('check_in', { eid: eventId }); if (error) throw error },
     onSuccess: refresh,
+  })
+  return { rsvp, checkIn, refresh }
+}
+
+export default function Calendar() {
+  const { session } = useAuth()
+  const { community, member, isAdmin, isStaff } = useCommunity()
+  const to = useTo()
+  const uid = session!.user.id
+  const [tab, setTab] = useState<'upcoming' | 'past'>('upcoming')
+  const [adding, setAdding] = useState(false)
+  const [f, setF] = useState({ title: '', description: '', starts_at: '', ends_at: '', link_url: '' })
+  const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value })
+  const { rsvp, checkIn, refresh } = useEventActions(community.id)
+
+  const events = useQuery({
+    queryKey: ['events', community.id, 'all'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('events').select(EVENT_SELECT).eq('community_id', community.id).order('starts_at').limit(300)
+      if (error) throw error
+      return data as unknown as EventRow[]
+    },
+  })
+
+  const create = useMutation({
+    mutationFn: async () => {
+      if (f.link_url && !isHttpUrl(f.link_url)) throw new Error('الرابط غير صالح')
+      const { error } = await supabase.from('events').insert({
+        community_id: community.id, title: f.title.trim(), description: f.description.trim() || null,
+        starts_at: new Date(f.starts_at).toISOString(), ends_at: f.ends_at ? new Date(f.ends_at).toISOString() : null, link_url: f.link_url.trim() || null,
+      })
+      if (error) throw error
+    },
+    onSuccess: () => { setAdding(false); setF({ title: '', description: '', starts_at: '', ends_at: '', link_url: '' }); refresh() },
   })
 
   const onSubmit = (e: FormEvent) => { e.preventDefault(); create.mutate() }
+  const all = events.data ?? []
+  const upcoming = all.filter((e) => !isPast(e))
+  const past = all.filter((e) => isPast(e)).reverse()
+  const list = tab === 'upcoming' ? upcoming : past
+
+  // Attendance summary for the viewer across past events since they joined.
+  const mineHeld = past.filter((e) => !member || new Date(e.starts_at) >= new Date(new Date(member.joined_at).getTime() - 86400_000))
+  const mineAttended = mineHeld.filter((e) => isAttended(e.event_attendance.find((a) => a.user_id === uid)?.status)).length
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -79,39 +91,68 @@ export default function Calendar() {
         </form>
       )}
 
-      <ErrorNote error={events.error ?? rsvp.error ?? remove.error} />
-      {events.isLoading ? <Spinner /> : !events.data?.length ? <Empty title="لا توجد لقاءات قادمة" hint="ستظهر هنا اللقاءات المباشرة فور الإعلان عنها." /> : (
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+        <div className="inline-flex rounded-md border border-line bg-white p-1" role="tablist" aria-label="اللقاءات">
+          {([['upcoming', 'القادمة', upcoming.length], ['past', 'السابقة', past.length]] as const).map(([k, label, n]) => (
+            <button key={k} role="tab" aria-selected={tab === k} onClick={() => setTab(k)}
+              className={`cursor-pointer rounded-[5px] px-3.5 py-1.5 text-sm font-semibold transition-colors ${tab === k ? 'bg-brand text-white' : 'text-muted hover:text-brand'}`}>
+              {label}<span className={`ms-1.5 text-xs tabular-nums ${tab === k ? 'text-mint' : 'text-peri'}`}>{n}</span>
+            </button>
+          ))}
+        </div>
+        {member && mineHeld.length > 0 && (
+          <p className="inline-flex items-center gap-2 text-sm text-muted">
+            <UserCheck className="size-4 text-mint-deep" />حضرت <strong className="text-brand tabular-nums">{mineAttended}</strong> من {mineHeld.length} لقاءات
+          </p>
+        )}
+      </div>
+
+      <ErrorNote error={events.error ?? rsvp.error ?? checkIn.error} />
+      {events.isLoading ? <Spinner /> : !list.length ? (
+        <Empty title={tab === 'upcoming' ? 'لا توجد لقاءات قادمة' : 'لا توجد لقاءات سابقة'} hint={tab === 'upcoming' ? 'ستظهر هنا اللقاءات المباشرة فور الإعلان عنها.' : undefined} />
+      ) : (
         <ul className="space-y-4">
-          {events.data.map((e, i) => {
+          {list.map((e, i) => {
             const going = e.event_rsvps.some((r) => r.user_id === uid)
+            const mine = e.event_attendance.find((a) => a.user_id === uid)?.status
+            const live = checkInOpen(e)
             const d = new Date(e.starts_at)
-            const featured = i === 0
-            const time = d.toLocaleTimeString('ar-u-nu-latn', { hour: 'numeric', minute: '2-digit' })
-            const end = e.ends_at ? new Date(e.ends_at).toLocaleTimeString('ar-u-nu-latn', { hour: 'numeric', minute: '2-digit' }) : null
+            const featured = tab === 'upcoming' && i === 0
+            const presentCount = e.event_attendance.filter((a) => isAttended(a.status)).length
             return (
               <li key={e.id} style={{ animationDelay: `${i * 70}ms` }}
-                className={`card card-hover flex animate-rise overflow-hidden ${featured ? 'border-brand' : ''}`}>
+                className={`card card-hover flex animate-rise overflow-hidden ${featured ? 'border-brand' : ''} ${tab === 'past' ? 'opacity-95' : ''}`}>
                 <div className={`flex w-24 shrink-0 flex-col items-center justify-center py-5 sm:w-28 ${featured ? 'bg-brand text-white' : 'border-e border-line bg-cloud text-brand'}`}>
                   <span className={`text-xs font-medium ${featured ? 'text-mint' : 'text-peri'}`}>{d.toLocaleDateString('ar-u-nu-latn', { weekday: 'long' })}</span>
                   <span className="text-4xl font-bold leading-tight tabular-nums">{d.getDate()}</span>
                   <span className="text-sm font-semibold">{d.toLocaleDateString('ar-u-nu-latn', { month: 'long' })}</span>
                 </div>
                 <div className="min-w-0 flex-1 p-5">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      {featured && <span className="tag mb-2 bg-mint-soft text-mint-deep">اللقاء القادم</span>}
-                      <h2 className="text-lg font-bold leading-snug text-brand">{e.title}</h2>
-                      <p className="mt-0.5 flex items-center gap-1.5 text-sm text-muted"><Clock className="size-3.5" />{time}{end && ` - ${end}`}</p>
-                    </div>
-                    {isAdmin && <button className="btn-danger btn-icon !p-2" aria-label="حذف اللقاء" onClick={() => confirm('حذف اللقاء؟') && remove.mutate(e.id)}><Trash2 className="size-4" /></button>}
+                  <div className="flex flex-wrap items-center gap-2">
+                    {live && <span className="tag bg-danger text-white"><Radio className="size-3" />مباشر الآن</span>}
+                    {featured && !live && <span className="tag bg-mint-soft text-mint-deep">اللقاء القادم</span>}
+                    {mine && <span className={`tag ${ATTENDANCE_TONE[mine]}`}>{ATTENDANCE_LABEL[mine]}</span>}
+                    {tab === 'past' && !mine && member && <span className="tag bg-cloud text-muted">لم يسجل حضورك</span>}
                   </div>
-                  {e.description && <p className="mt-2 whitespace-pre-wrap text-[15px] leading-7 text-ink/85">{e.description}</p>}
+                  <h2 className="mt-1.5 text-lg font-bold leading-snug text-brand">
+                    <Link to={to(`/calendar/${e.id}`)} className="hover:underline">{e.title}</Link>
+                  </h2>
+                  <p className="mt-0.5 flex items-center gap-1.5 text-sm text-muted"><Clock className="size-3.5" />{timeOf(e.starts_at)}{e.ends_at && ` - ${timeOf(e.ends_at)}`}</p>
+                  {e.description && tab === 'upcoming' && <p className="mt-2 line-clamp-3 whitespace-pre-wrap text-[15px] leading-7 text-ink/85">{e.description}</p>}
                   <div className="mt-4 flex flex-wrap items-center gap-2">
-                    <button className={going ? 'btn-ghost' : 'btn-primary'} disabled={rsvp.isPending} onClick={() => rsvp.mutate(e)} aria-pressed={going}>
-                      {going ? <><Check key="y" className="size-4 animate-pop text-mint-deep" />مسجل للحضور</> : <><CalendarCheck className="size-4" />سأحضر</>}
-                    </button>
-                    {e.link_url && isHttpUrl(e.link_url) && <a className="btn-quiet" href={e.link_url} target="_blank" rel="noreferrer"><ExternalLink className="size-4" />رابط الانضمام</a>}
-                    <span className="ms-auto inline-flex items-center gap-1.5 text-sm text-muted"><Users className="size-4" />{formatNumber(e.event_rsvps.length)} سيحضرون</span>
+                    {live && member && !mine && (
+                      <button className="btn-primary" disabled={checkIn.isPending} onClick={() => checkIn.mutate(e.id)}><UserCheck className="size-4" />سجّل حضورك</button>
+                    )}
+                    {tab === 'upcoming' && !live && (
+                      <button className={going ? 'btn-ghost' : 'btn-primary'} disabled={rsvp.isPending} onClick={() => rsvp.mutate({ e, uid })} aria-pressed={going}>
+                        {going ? <><Check key="y" className="size-4 animate-pop text-mint-deep" />مسجل للحضور</> : <><CalendarCheck className="size-4" />سأحضر</>}
+                      </button>
+                    )}
+                    {tab === 'upcoming' && e.link_url && isHttpUrl(e.link_url) && <a className="btn-quiet" href={e.link_url} target="_blank" rel="noreferrer"><ExternalLink className="size-4" />رابط الانضمام</a>}
+                    {isStaff && (
+                      <Link to={to(`/calendar/${e.id}`)} className="btn-quiet"><UserCheck className="size-4" />{tab === 'past' ? `الحضور ${formatNumber(presentCount)}` : 'سجل الحضور'}<ArrowLeft className="size-4" /></Link>
+                    )}
+                    <span className="ms-auto inline-flex items-center gap-1.5 text-sm text-muted"><Users className="size-4" />{formatNumber(e.event_rsvps.length)} {tab === 'past' ? 'سجلوا' : 'سيحضرون'}</span>
                   </div>
                 </div>
               </li>

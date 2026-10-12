@@ -3,6 +3,7 @@ import { useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { LogoHorizontal, OutlineMark, PatternBand } from '../components/brand'
 import { ErrorNote } from '../components/ui'
+import { PENDING_INVITE_KEY, readStore } from '../lib/auth'
 import { supabase } from '../lib/supabase'
 
 /** Sign in / sign up, laid out like the identity cover (PDF page 1). */
@@ -20,7 +21,10 @@ export default function Auth({ mode }: { mode: 'login' | 'signup' }) {
         const { error } = await supabase.auth.signInWithPassword({ email, password })
         if (error) throw new Error(error.message === 'Invalid login credentials' ? 'البريد الإلكتروني أو كلمة المرور غير صحيحة' : error.message)
       } else {
-        const { data, error } = await supabase.auth.signUp({ email, password, options: { data: { full_name: name.trim() }, emailRedirectTo: window.location.origin } })
+        // The confirmation link lands back on the invite (if any) so the new member joins right away.
+        const invite = readStore(PENDING_INVITE_KEY)
+        const emailRedirectTo = window.location.origin + (invite ? `/join/${invite}` : '')
+        const { data, error } = await supabase.auth.signUp({ email, password, options: { data: { full_name: name.trim() }, emailRedirectTo } })
         if (error) throw error
         if (!data.session) setNotice('أرسلنا رابط التفعيل إلى بريدك الإلكتروني. افتحه ثم سجل الدخول.')
       }

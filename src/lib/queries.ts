@@ -3,7 +3,7 @@ import type { Post } from './types'
 
 export type PostWithLike = Post & { liked: boolean }
 
-export const AUTHOR_FIELDS = 'id,username,display_name,avatar_url,members(points)'
+export const AUTHOR_FIELDS = 'id,username,display_name,avatar_url,members(points,community_id)'
 
 export const POST_SELECT =
   `*, author:profiles!posts_author_id_fkey(${AUTHOR_FIELDS}), category:categories(id,name,color)`
@@ -17,8 +17,9 @@ async function withLikes(posts: Post[], uid: string): Promise<PostWithLike[]> {
   return posts.map((p) => ({ ...p, liked: liked.has(p.id) }))
 }
 
-export async function fetchPosts(opts: { uid: string; page: number; categoryId?: string | null; authorId?: string }) {
-  let q = supabase.from('posts').select(POST_SELECT)
+export async function fetchPosts(opts: { uid: string; communityId: string; page: number; categoryId?: string | null; authorId?: string }) {
+  // The embedded author membership is narrowed to this community so levels are per community.
+  let q = supabase.from('posts').select(POST_SELECT).eq('community_id', opts.communityId).eq('author.members.community_id', opts.communityId)
   if (opts.categoryId) q = q.eq('category_id', opts.categoryId)
   if (opts.authorId) q = q.eq('author_id', opts.authorId)
   const from = opts.page * PAGE_SIZE
@@ -30,9 +31,11 @@ export async function fetchPosts(opts: { uid: string; page: number; categoryId?:
   return withLikes(data as unknown as Post[], opts.uid)
 }
 
-export async function fetchPost(id: string, uid: string) {
-  const { data, error } = await supabase.from('posts').select(POST_SELECT).eq('id', id).single()
+export async function fetchPost(id: string, uid: string, communityId: string) {
+  const { data, error } = await supabase.from('posts').select(POST_SELECT).eq('id', id).eq('community_id', communityId)
+    .eq('author.members.community_id', communityId).maybeSingle()
   if (error) throw error
+  if (!data) return null
   return (await withLikes([data as unknown as Post], uid))[0]
 }
 

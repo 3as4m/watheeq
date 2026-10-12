@@ -5,6 +5,7 @@ import { Link } from 'react-router-dom'
 import { CourseCover } from '../components/brand'
 import { Empty, ErrorNote, PageTitle, Spinner } from '../components/ui'
 import { useAuth } from '../lib/auth'
+import { useCommunity, useTo } from '../lib/community'
 import { supabase } from '../lib/supabase'
 import type { Course } from '../lib/types'
 import { levelFor } from '../lib/utils'
@@ -12,7 +13,9 @@ import { levelFor } from '../lib/utils'
 type CourseRow = Course & { modules: { id: string; lessons: { id: string }[] }[] }
 
 export default function Classroom() {
-  const { session, community, member, isStaff, isAdmin } = useAuth()
+  const { session } = useAuth()
+  const { community, member, isStaff, isAdmin } = useCommunity()
+  const to = useTo()
   const qc = useQueryClient()
   const level = levelFor(member?.points ?? 0)
   const [adding, setAdding] = useState(false)
@@ -21,9 +24,9 @@ export default function Classroom() {
   const [minLevel, setMinLevel] = useState(1)
 
   const courses = useQuery({
-    queryKey: ['courses'],
+    queryKey: ['courses', community.id],
     queryFn: async () => {
-      const { data, error } = await supabase.from('courses').select('*, modules(id, lessons(id))').order('position').order('created_at')
+      const { data, error } = await supabase.from('courses').select('*, modules(id, lessons(id))').eq('community_id', community.id).order('position').order('created_at')
       if (error) throw error
       return data as unknown as CourseRow[]
     },
@@ -41,7 +44,7 @@ export default function Classroom() {
   const create = useMutation({
     mutationFn: async () => {
       const { error } = await supabase.from('courses').insert({
-        community_id: community!.id, title: title.trim(), description: description.trim() || null, min_level: minLevel, position: courses.data?.length ?? 0,
+        community_id: community.id, title: title.trim(), description: description.trim() || null, min_level: minLevel, position: courses.data?.length ?? 0,
       })
       if (error) throw error
     },
@@ -83,7 +86,7 @@ export default function Classroom() {
             const completed = lessonIds.filter((id) => done.data?.has(id)).length
             const pct = lessonIds.length ? Math.round((completed / lessonIds.length) * 100) : 0
             return (
-              <Link key={c.id} to={`/classroom/${c.id}`} className="card card-hover group flex animate-rise flex-col overflow-hidden" style={{ animationDelay: `${i * 60}ms` }}>
+              <Link key={c.id} to={to(`/classroom/${c.id}`)} className="card card-hover group flex animate-rise flex-col overflow-hidden" style={{ animationDelay: `${i * 60}ms` }}>
                 <div className="relative aspect-[16/9] overflow-hidden bg-brand-soft">
                   <div className="size-full">
                   {c.cover_url ? <img src={c.cover_url} alt="" className="size-full object-cover" loading="lazy" /> : <CourseCover index={i} />}
