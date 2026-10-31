@@ -158,6 +158,21 @@ try {
   await c.query('delete from public.communities where id=$1', [two])
   ok('platform admin deletes community', (await c.query('select 1 from public.communities where id=$1', [two])).rowCount === 0)
   await as(B)
+  // paid communities
+  await c.query('reset role')
+  const paid = (await c.query(`insert into public.communities (slug,name,price_amount,price_interval) values ('rls-paid','Paid',4900,'month') returning id`)).rows[0].id
+  await c.query(`insert into public.community_invites (community_id, code) values ($1, 'rlspaidcode')`, [paid])
+  await as(B)
+  ok('paid community: free join refused', (await denied('select public.join_community($1)', [paid])) === 'error')
+  ok('paid community: invite code does not bypass payment', (await denied(`select public.join_community(null, 'rlspaidcode')`)) === 'error')
+  ok('paid community offered for checkout', (await c.query('select * from public.community_for_checkout($1)', [paid])).rowCount === 1)
+  ok('member cannot set community price', (await denied(`update public.communities set price_amount=null, price_interval=null where id=$1`, [paid])) !== 'allowed')
+  await c.query('reset role')
+  await c.query(`insert into public.members (community_id,user_id) values ($1,$2)`, [paid, B])
+  await as(B)
+  ok('existing member is not offered checkout again', (await c.query('select * from public.community_for_checkout($1)', [paid])).rowCount === 0)
+  ok('member cannot call fulfil without secret', (await denied(`select public.payments_fulfill('x','cs_x',$1,$2,1,'sar','one_time')`, [B, paid])) === 'error')
+
   await asAnon()
   ok('anon cannot call leaderboard', (await denied('select * from public.leaderboard($1, 7)', [cid])) === 'error')
   ok('anon can read community_stats', (await c.query('select * from public.community_stats($1)', [cid])).rows[0].member_count >= 2)

@@ -11,6 +11,23 @@ export interface Community {
   is_private: boolean
   archived: boolean
   created_at: string
+  price_amount: number | null
+  price_currency: Currency
+  price_interval: PriceInterval | null
+}
+
+export type Currency = 'sar' | 'usd' | 'aed'
+export type PriceInterval = 'one_time' | 'month' | 'year'
+
+export interface Payment {
+  id: string
+  stripe_ref: string
+  community_id: string | null
+  user_id: string | null
+  amount: number
+  currency: Currency
+  kind: 'one_time' | 'subscription' | 'renewal'
+  created_at: string
 }
 
 export interface Profile {

@@ -10,10 +10,11 @@ import { useCommunity, useTo } from '../lib/community'
 import { downloadCsv } from '../lib/csv'
 import { ATTENDANCE_LABEL } from '../lib/events'
 import { supabase } from '../lib/supabase'
-import type { AttendanceStatus, MemberStats, QuestionKind, Role } from '../lib/types'
+import { CURRENCY_LABEL, INTERVAL_LABEL, money } from '../lib/payments'
+import type { AttendanceStatus, Currency, MemberStats, Payment, PriceInterval, QuestionKind, Role } from '../lib/types'
 import { formatNumber, timeAgo } from '../lib/utils'
 
-type Tab = 'people' | 'quizzes' | 'attendance' | 'settings'
+type Tab = 'people' | 'quizzes' | 'attendance' | 'payments' | 'settings'
 const roleLabel: Record<Role, string> = { owner: 'مؤسس', admin: 'مدير', moderator: 'مشرف', member: 'عضو' }
 
 export function useMemberStats(cid: string) {
@@ -278,6 +279,110 @@ function AttendanceTab() {
   )
 }
 
+// ---------------------------------------------------------------- payments
+function PaymentsTab() {
+  const { community } = useCommunity()
+  const { refresh } = useAuth()
+  const qc = useQueryClient()
+  const to = useTo()
+  const stats = useMemberStats(community.id)
+  const names = new Map((stats.data ?? []).map((m) => [m.user_id, m]))
+  const [f, setF] = useState({
+    interval: (community.price_interval ?? 'free') as PriceInterval | 'free',
+    amount: community.price_amount ? String(community.price_amount / 100) : '',
+    currency: community.price_currency,
+  })
+  const [saved, setSaved] = useState(false)
+
+  const payments = useQuery({
+    queryKey: ['payments', community.id],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('payments').select('*').eq('community_id', community.id).order('created_at', { ascending: false }).limit(500)
+      if (error) throw error
+      return data as Payment[]
+    },
+  })
+
+  const save = useMutation({
+    mutationFn: async () => {
+      const free = f.interval === 'free'
+      const amount = Math.round(Number(f.amount) * 100)
+      if (!free && !(amount >= 200)) throw new Error('أقل مبلغ ممكن 2')
+      const { error } = await supabase.from('communities').update({
+        price_amount: free ? null : amount, price_interval: free ? null : f.interval, price_currency: f.currency,
+      }).eq('id', community.id)
+      if (error) throw error
+    },
+    onSuccess: () => { setSaved(true); refresh(); qc.invalidateQueries({ queryKey: ['community'] }); qc.invalidateQueries({ queryKey: ['communities'] }) },
+  })
+
+  const list = payments.data ?? []
+  const totals = list.reduce<Record<string, number>>((t, p) => ({ ...t, [p.currency]: (t[p.currency] ?? 0) + p.amount }), {})
+  const monthAgo = Date.now() - 30 * 86400_000
+  const last30 = list.filter((p) => new Date(p.created_at).getTime() > monthAgo)
+  const kindLabel = { one_time: 'دفعة واحدة', subscription: 'اشتراك جديد', renewal: 'تجديد' } as const
+
+  return (
+    <div className="grid gap-6 lg:grid-cols-[360px_1fr]">
+      <form className="card h-fit space-y-4 p-5 sm:p-6" onSubmit={(e) => { e.preventDefault(); setSaved(false); save.mutate() }}>
+        <h2 className="font-bold text-brand">سعر الانضمام</h2>
+        <div className="grid grid-cols-2 gap-1.5" role="radiogroup" aria-label="نوع الاشتراك">
+          {(['free', 'one_time', 'month', 'year'] as const).map((k) => (
+            <button key={k} type="button" role="radio" aria-checked={f.interval === k} onClick={() => setF({ ...f, interval: k })}
+              className={`cursor-pointer rounded-md border-2 px-3 py-2.5 text-sm font-semibold transition-colors ${f.interval === k ? 'border-brand bg-brand-soft/70 text-brand' : 'border-line text-muted hover:border-brand/40'}`}>
+              {k === 'free' ? 'مجاني' : INTERVAL_LABEL[k]}
+            </button>
+          ))}
+        </div>
+        {f.interval !== 'free' && (
+          <div className="grid animate-rise grid-cols-[1fr_auto] gap-2 [animation-duration:0.3s]">
+            <div><label className="label" htmlFor="pa">المبلغ</label><input id="pa" type="number" min={2} step="0.01" dir="ltr" className="input" value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} required /></div>
+            <div><label className="label" htmlFor="pc">العملة</label>
+              <select id="pc" className="input" value={f.currency} onChange={(e) => setF({ ...f, currency: e.target.value as Currency })}>
+                {(Object.keys(CURRENCY_LABEL) as Currency[]).map((c) => <option key={c} value={c}>{CURRENCY_LABEL[c]}</option>)}
+              </select>
+            </div>
+          </div>
+        )}
+        <p className="text-xs leading-6 text-muted">
+          {f.interval === 'free' ? 'يمكن لأي شخص الانضمام مجانًا (أو برابط الدعوة إن كان المجتمع خاصًا).'
+            : 'يدفع العضو عبر Stripe قبل الدخول، ورابط الدعوة يقوده إلى صفحة الدفع. من تضيفه بالبريد يدخل مجانًا. تغيير السعر لا يؤثر على الاشتراكات القائمة.'}
+        </p>
+        <ErrorNote error={save.error} />
+        {saved && <p role="status" className="animate-rise text-sm font-medium text-mint-deep">تم الحفظ.</p>}
+        <button className="btn-primary" disabled={save.isPending}>حفظ السعر</button>
+      </form>
+
+      <div className="space-y-4">
+        <div className="grid grid-cols-2 gap-3">
+          <StatTile index={0} accent label="إجمالي المدفوعات" value={Object.keys(totals).length ? Object.entries(totals).map(([c, a]) => money(a, c as Currency)).join(' + ') : null} hint={`${formatNumber(list.length)} عملية`} />
+          <StatTile index={1} label="آخر 30 يومًا" value={last30.length} hint="عملية دفع" />
+        </div>
+        <div className="card overflow-hidden">
+          <ErrorNote error={payments.error} />
+          {payments.isLoading ? <Spinner /> : !list.length ? <div className="p-6"><Empty title="لا توجد مدفوعات بعد" /></div> : (
+            <ul className="divide-y divide-line">
+              {list.map((p) => {
+                const m = p.user_id ? names.get(p.user_id) : undefined
+                return (
+                  <li key={p.id} className="flex flex-wrap items-center gap-3 px-5 py-3">
+                    <Avatar name={m?.display_name ?? '؟'} src={m?.avatar_url} size={34} />
+                    <div className="min-w-0 flex-1">
+                      {m ? <Link to={to(`/u/${m.username}`)} className="font-bold text-brand hover:underline">{m.display_name}</Link> : <span className="text-muted">عضو سابق</span>}
+                      <p className="text-xs text-muted">{kindLabel[p.kind]} · {timeAgo(p.created_at)}</p>
+                    </div>
+                    <span className="font-bold text-brand tabular-nums">{money(p.amount, p.currency)}</span>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ---------------------------------------------------------------- settings
 function SettingsTab() {
   const { community, isAdmin } = useCommunity()
@@ -429,10 +534,11 @@ export default function CommunitySettings() {
     <div>
       <PageTitle kicker="إدارة المجتمع" title={community.name} />
       <TabBar<Tab> value={tab} onChange={(t) => setSp(t === 'people' ? {} : { tab: t }, { replace: true })}
-        tabs={[{ id: 'people', label: 'المشاركون' }, { id: 'quizzes', label: 'الاختبارات' }, { id: 'attendance', label: 'الحضور' }, { id: 'settings', label: 'الإعدادات' }]} />
+        tabs={[{ id: 'people', label: 'المشاركون' }, { id: 'quizzes', label: 'الاختبارات' }, { id: 'attendance', label: 'الحضور' }, { id: 'payments', label: 'الاشتراك والمدفوعات' }, { id: 'settings', label: 'الإعدادات' }]} />
       {tab === 'people' && <People />}
       {tab === 'quizzes' && <Quizzes />}
       {tab === 'attendance' && <AttendanceTab />}
+      {tab === 'payments' && <PaymentsTab />}
       {tab === 'settings' && <SettingsTab />}
     </div>
   )

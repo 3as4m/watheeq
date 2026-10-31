@@ -1,9 +1,10 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { ArrowLeft, Lock, Plus } from 'lucide-react'
+import { ArrowLeft, CreditCard, Lock, Plus } from 'lucide-react'
 import { Link, useNavigate } from 'react-router-dom'
 import { CourseCover } from '../components/brand'
 import { Empty, ErrorNote, PageTitle, Spinner } from '../components/ui'
 import { useAuth } from '../lib/auth'
+import { priceLabel } from '../lib/payments'
 import { supabase } from '../lib/supabase'
 import type { Community, Role } from '../lib/types'
 
@@ -81,7 +82,9 @@ export default function Hub() {
                 <CommunityCard key={c.id} c={c} index={i + memberships.length}
                   action={isPlatformAdmin
                     ? <Link to={`/c/${c.slug}`} className="btn-ghost w-full">فتح كمدير<ArrowLeft className="size-4" /></Link>
-                    : <button className="btn-ghost w-full" disabled={join.isPending} onClick={() => join.mutate(c)}>انضمام</button>} />
+                    : priceLabel(c)
+                      ? <Link to={`/c/${c.slug}`} className="btn-ghost w-full"><CreditCard className="size-4" />{priceLabel(c)}</Link>
+                      : <button className="btn-ghost w-full" disabled={join.isPending} onClick={() => join.mutate(c)}>انضمام مجاني</button>} />
               ))}
             </div>
           )}

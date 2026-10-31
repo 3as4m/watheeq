@@ -16,7 +16,7 @@ import Dashboard from './pages/Dashboard'
 import EventPage from './pages/EventPage'
 import Feed from './pages/Feed'
 import Hub from './pages/Hub'
-import Join, { JoinPrompt } from './pages/Join'
+import Join, { CheckoutDone, JoinPrompt } from './pages/Join'
 import Landing from './pages/Landing'
 import Leaderboard from './pages/Leaderboard'
 import Members from './pages/Members'
@@ -94,6 +94,7 @@ function Gate() {
       <Route index element={<Home />} />
       <Route path="welcome" element={<Landing />} />
       <Route path="join/:code" element={<Join />} />
+      <Route path="checkout/done" element={<CheckoutDone />} />
       <Route element={<PlainLayout />}>
         <Route path="communities" element={<Hub />} />
         <Route path="admin" element={<AdminOnly><Dashboard /></AdminOnly>} />
