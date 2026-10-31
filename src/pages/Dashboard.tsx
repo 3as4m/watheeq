@@ -7,7 +7,8 @@ import { OutlineMark } from '../components/brand'
 import { Avatar, Empty, ErrorNote, Spinner } from '../components/ui'
 import { useAuth } from '../lib/auth'
 import { supabase } from '../lib/supabase'
-import type { CommunityOverview, MemberStats, PlatformUser, Role } from '../lib/types'
+import { CURRENCY_LABEL, INTERVAL_LABEL } from '../lib/payments'
+import type { CommunityOverview, Currency, MemberStats, PlatformUser, PriceInterval, Role } from '../lib/types'
 import { formatNumber, timeAgo } from '../lib/utils'
 import { exportMembers } from './CommunitySettings'
 
@@ -40,20 +41,29 @@ function CreateCommunity({ onClose }: { onClose: () => void }) {
   const qc = useQueryClient()
   const nav = useNavigate()
   const { refresh } = useAuth()
-  const [f, setF] = useState({ name: '', slug: '', tagline: '', about: '', is_private: true, owner: '' })
+  const [f, setF] = useState({
+    name: '', slug: '', tagline: '', about: '', is_private: true, owner: '',
+    interval: 'free' as PriceInterval | 'free', amount: '', currency: 'qar' as Currency,
+  })
   const slugOk = /^[a-z0-9-]{2,40}$/.test(f.slug)
 
   const create = useMutation({
     mutationFn: async () => {
+      const amount = Math.round(Number(f.amount) * 100)
+      if (f.interval !== 'free' && !(amount >= 200)) throw new Error('أقل سعر ممكن 2')
       const { data, error } = await supabase.rpc('create_community', {
         p_slug: f.slug, p_name: f.name, p_tagline: f.tagline, p_about: f.about, p_private: f.is_private, p_owner_email: f.owner || null,
       })
       if (error) throw error
+      if (f.interval !== 'free') {
+        const priced = await supabase.from('communities').update({ price_amount: amount, price_interval: f.interval, price_currency: f.currency }).eq('slug', data)
+        if (priced.error) throw priced.error
+      }
       return data as string
     },
     onSuccess: async (slug) => {
       qc.invalidateQueries({ queryKey: ['platform-overview'] }); qc.invalidateQueries({ queryKey: ['communities'] }); await refresh()
-      nav(`/c/${slug}/settings?tab=settings`)
+      nav(`/c/${slug}/settings?tab=${f.interval === 'free' ? 'settings' : 'payments'}`)
     },
   })
   const submit = (e: FormEvent) => { e.preventDefault(); if (slugOk) create.mutate() }
@@ -82,6 +92,27 @@ function CreateCommunity({ onClose }: { onClose: () => void }) {
           <input type="checkbox" className="mt-1 size-4 accent-[#003692]" checked={f.is_private} onChange={(e) => setF({ ...f, is_private: e.target.checked })} />
           <span><span className="font-medium text-ink">مجتمع خاص</span><span className="block text-xs text-muted">الانضمام برابط الدعوة فقط</span></span>
         </label>
+        <div className="space-y-3 border-t border-line pt-4 sm:col-span-2">
+          <p className="label !mb-0">سعر الانضمام</p>
+          <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4" role="radiogroup" aria-label="سعر الانضمام">
+            {(['free', 'one_time', 'month', 'year'] as const).map((k) => (
+              <button key={k} type="button" role="radio" aria-checked={f.interval === k} onClick={() => setF({ ...f, interval: k })}
+                className={`cursor-pointer rounded-md border-2 px-3 py-2.5 text-sm font-semibold transition-colors ${f.interval === k ? 'border-brand bg-brand-soft/70 text-brand' : 'border-line text-muted hover:border-brand/40'}`}>
+                {k === 'free' ? 'مجاني' : INTERVAL_LABEL[k]}
+              </button>
+            ))}
+          </div>
+          {f.interval !== 'free' && (
+            <div className="grid animate-rise grid-cols-[1fr_auto] gap-2 [animation-duration:0.3s] sm:max-w-md">
+              <div><label className="label" htmlFor="cpa">المبلغ</label><input id="cpa" type="number" min={2} step="0.01" dir="ltr" className="input" value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} required /></div>
+              <div><label className="label" htmlFor="cpc">العملة</label>
+                <select id="cpc" className="input" value={f.currency} onChange={(e) => setF({ ...f, currency: e.target.value as Currency })}>
+                  {(Object.keys(CURRENCY_LABEL) as Currency[]).map((c) => <option key={c} value={c}>{CURRENCY_LABEL[c]}</option>)}
+                </select>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
       <div className="flex items-center gap-2 border-t border-line px-6 py-4">
         <button className="btn-primary" disabled={create.isPending || !slugOk}>{create.isPending ? 'جار الإنشاء...' : 'إنشاء المجتمع'}</button>
