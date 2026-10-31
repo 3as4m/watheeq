@@ -1,8 +1,8 @@
 import { supabase } from './supabase'
 import type { Currency, PriceInterval } from './types'
 
-const SYMBOL: Record<Currency, string> = { sar: 'ر.س', usd: '$', aed: 'د.إ' }
-export const CURRENCY_LABEL: Record<Currency, string> = { sar: 'ريال سعودي', usd: 'دولار أمريكي', aed: 'درهم إماراتي' }
+const SYMBOL: Record<Currency, string> = { qar: 'ر.ق', sar: 'ر.س', usd: '$', aed: 'د.إ' }
+export const CURRENCY_LABEL: Record<Currency, string> = { qar: 'ريال قطري', sar: 'ريال سعودي', usd: 'دولار أمريكي', aed: 'درهم إماراتي' }
 export const INTERVAL_LABEL: Record<PriceInterval, string> = { one_time: 'دفعة واحدة', month: 'شهريًا', year: 'سنويًا' }
 
 /** 4900 sar -> "49 ر.س"; amounts are stored in the currency's minor unit. */

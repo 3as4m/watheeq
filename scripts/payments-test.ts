@@ -21,7 +21,7 @@ const send = async (event: object, sig?: string) => {
 }
 const session = (id: string, mode: string, sub: string | null) => ({
   id: 'evt_' + id, object: 'event', type: 'checkout.session.completed',
-  data: { object: { id, object: 'checkout.session', mode, payment_status: 'paid', amount_total: 4900, currency: 'sar', subscription: sub, metadata: { user_id: user, community_id: cid } } },
+  data: { object: { id, object: 'checkout.session', mode, payment_status: 'paid', amount_total: 4900, currency: 'qar', subscription: sub, metadata: { user_id: user, community_id: cid } } },
 })
 
 const user = (await pg.query(`select user_id from public.members m join auth.users u on u.id = m.user_id where u.email like 'demo-%' limit 1`)).rows[0].user_id
@@ -36,7 +36,7 @@ try {
   await send(session('cs_test_sub', 'subscription', 'sub_test_1'))
   ok('replayed event records one payment', (await pg.query(`select count(*)::int n from public.payments where stripe_ref = 'cs_test_sub'`)).rows[0].n === 1)
 
-  await send({ id: 'evt_inv', object: 'event', type: 'invoice.paid', data: { object: { id: 'in_test_1', object: 'invoice', billing_reason: 'subscription_cycle', amount_paid: 4900, currency: 'sar',
+  await send({ id: 'evt_inv', object: 'event', type: 'invoice.paid', data: { object: { id: 'in_test_1', object: 'invoice', billing_reason: 'subscription_cycle', amount_paid: 4900, currency: 'qar',
     parent: { subscription_details: { subscription: 'sub_test_1', metadata: { user_id: user, community_id: cid } } } } } })
   ok('renewal recorded', (await pg.query(`select kind from public.payments where stripe_ref = 'in_test_1'`)).rows[0]?.kind === 'renewal')
 
@@ -48,7 +48,7 @@ try {
 
   const { createClient } = await import('@supabase/supabase-js')
   const anon = createClient(process.env.VITE_SUPABASE_URL!, process.env.VITE_SUPABASE_PUBLISHABLE_KEY!)
-  const forged = await anon.rpc('payments_fulfill', { p_secret: 'guess', p_ref: 'cs_forged', p_user: user, p_community: cid, p_amount: 1, p_currency: 'sar', p_kind: 'one_time' })
+  const forged = await anon.rpc('payments_fulfill', { p_secret: 'guess', p_ref: 'cs_forged', p_user: user, p_community: cid, p_amount: 1, p_currency: 'qar', p_kind: 'one_time' })
   ok('fulfil RPC refuses a wrong secret', !!forged.error)
   ok('anon cannot read payments', !!(await anon.from('payments').select('id').limit(1)).error)
 } catch (e) {

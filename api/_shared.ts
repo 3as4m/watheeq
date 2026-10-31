@@ -29,7 +29,7 @@ export async function fulfillSession(session: Stripe.Checkout.Session) {
     p_user: user_id,
     p_community: community_id,
     p_amount: session.amount_total ?? 0,
-    p_currency: session.currency ?? 'sar',
+    p_currency: session.currency ?? 'qar',
     p_kind: session.mode === 'subscription' ? 'subscription' : 'one_time',
     p_subscription: subscription,
   })

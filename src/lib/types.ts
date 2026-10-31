@@ -16,7 +16,7 @@ export interface Community {
   price_interval: PriceInterval | null
 }
 
-export type Currency = 'sar' | 'usd' | 'aed'
+export type Currency = 'qar' | 'sar' | 'usd' | 'aed'
 export type PriceInterval = 'one_time' | 'month' | 'year'
 
 export interface Payment {
