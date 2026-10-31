@@ -1,4 +1,4 @@
-import { BookOpen, CalendarDays, Check, ChevronDown, LayoutDashboard, LayoutGrid, LogOut, MessagesSquare, Settings, Trophy, Users } from 'lucide-react'
+import { BookOpen, CalendarDays, Check, ChevronDown, LayoutDashboard, LayoutGrid, Lightbulb, LogOut, MessagesSquare, Settings, Trophy, Users } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
@@ -51,6 +51,9 @@ function Switcher({ current }: { current?: { id: string; name: string } }) {
           <div className="border-t border-line p-1.5">
             <Link role="menuitem" to="/communities" className="flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-muted transition-colors hover:bg-cloud hover:text-brand">
               <LayoutGrid className="size-4" />كل المجتمعات
+            </Link>
+            <Link role="menuitem" to="/suggest" className="flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-muted transition-colors hover:bg-cloud hover:text-brand">
+              <Lightbulb className="size-4" />اطلب مجتمعًا أو اقترح
             </Link>
             {isPlatformAdmin && (
               <Link role="menuitem" to="/admin" className="flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-muted transition-colors hover:bg-cloud hover:text-brand">

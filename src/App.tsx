@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-quer
 import { useEffect } from 'react'
 import { BrowserRouter, Navigate, Route, Routes, useParams } from 'react-router-dom'
 import Layout, { PlainLayout } from './components/Layout'
+import WhatsAppButton from './components/WhatsApp'
 import { Spinner } from './components/ui'
 import { AuthProvider, LAST_COMMUNITY_KEY, PENDING_INVITE_KEY, readStore, useAuth, writeStore } from './lib/auth'
 import { CommunityCtx, type CommunityState } from './lib/community'
@@ -22,6 +23,7 @@ import Leaderboard from './pages/Leaderboard'
 import Members from './pages/Members'
 import PostPage from './pages/PostPage'
 import ProfilePage from './pages/ProfilePage'
+import Suggest from './pages/Suggest'
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { staleTime: 15_000, retry: 1, refetchOnWindowFocus: false } } })
 
@@ -97,6 +99,7 @@ function Gate() {
       <Route path="checkout/done" element={<CheckoutDone />} />
       <Route element={<PlainLayout />}>
         <Route path="communities" element={<Hub />} />
+        <Route path="suggest" element={<Suggest />} />
         <Route path="admin" element={<AdminOnly><Dashboard /></AdminOnly>} />
       </Route>
       <Route path="c/:slug" element={<CommunityRoute />}>
@@ -123,6 +126,7 @@ export default function App() {
       <AuthProvider>
         <BrowserRouter>
           <Gate />
+          <WhatsAppButton />
         </BrowserRouter>
       </AuthProvider>
     </QueryClientProvider>

@@ -1,5 +1,5 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { ArrowLeft, CreditCard, Lock, Plus } from 'lucide-react'
+import { ArrowLeft, CreditCard, Lightbulb, Lock, Plus } from 'lucide-react'
 import { Link, useNavigate } from 'react-router-dom'
 import { CourseCover } from '../components/brand'
 import { Empty, ErrorNote, PageTitle, Spinner } from '../components/ui'
@@ -90,6 +90,14 @@ export default function Hub() {
           )}
         </section>
       )}
+      <Link to="/suggest" className="card card-hover flex items-center gap-4 p-5">
+        <span className="grid size-12 shrink-0 place-items-center rounded-md bg-mint-soft text-mint-deep"><Lightbulb className="size-5" /></span>
+        <span className="min-w-0 flex-1">
+          <span className="block font-bold text-brand">لم تجد المجتمع الذي تبحث عنه؟</span>
+          <span className="block text-sm text-muted">اطلب مجتمعًا جديدًا أو شاركنا اقتراحك لتحسين المنصة.</span>
+        </span>
+        <ArrowLeft className="size-4 text-peri" />
+      </Link>
     </div>
   )
 }

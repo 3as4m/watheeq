@@ -235,3 +235,14 @@ export interface PlatformUser {
   is_platform_admin: boolean
   communities: { id: string; slug: string; name: string; role: Role }[]
 }
+
+export type RequestKind = 'community' | 'suggestion'
+export interface RequestItem {
+  id: string
+  user_id: string
+  kind: RequestKind
+  title: string
+  body: string
+  status: 'new' | 'reviewing' | 'done' | 'declined'
+  created_at: string
+}

@@ -81,10 +81,11 @@ export default function Join() {
 
   // Remember the invite through signup/email confirmation; free communities are joined straight away.
   useEffect(() => {
+    if (preview.isSuccess && !preview.data) writeStore(PENDING_INVITE_KEY, null) // dead link: don't keep redirecting to it
     if (!preview.data) return
     if (!session) writeStore(PENDING_INVITE_KEY, code)
     else if (!paid && !started.current) { started.current = true; join.mutate() }
-  }, [preview.data, session, code, join, paid])
+  }, [preview.data, preview.isSuccess, session, code, join, paid])
 
   if (preview.isLoading || (session && preview.data && !paid && !join.isError)) return <Spinner label="جار الانضمام" />
   if (!preview.data) {

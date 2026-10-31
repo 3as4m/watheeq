@@ -158,6 +158,18 @@ try {
   await c.query('delete from public.communities where id=$1', [two])
   ok('platform admin deletes community', (await c.query('select 1 from public.communities where id=$1', [two])).rowCount === 0)
   await as(B)
+  // requests and suggestions
+  await as(B)
+  const reqId = (await c.query(`insert into public.requests (kind,title,body) values ('community','Teens group','please') returning id, user_id, status`)).rows[0]
+  ok('member files a request as self, status new', reqId.user_id === B && reqId.status === 'new')
+  ok('cannot file a request as someone else', (await denied(`insert into public.requests (kind,title,user_id) values ('suggestion','xyz',$1)`, [A])) === 'error')
+  ok('member cannot change request status', (await denied(`update public.requests set status='done' where id=$1`, [reqId.id])) !== 'allowed')
+  await as(A)
+  ok('other members cannot read the request', (await c.query('select 1 from public.requests where id=$1', [reqId.id])).rowCount === 0)
+  await as(P)
+  await c.query(`update public.requests set status='reviewing' where id=$1`, [reqId.id])
+  ok('platform admin triages requests', (await c.query('select status from public.requests where id=$1', [reqId.id])).rows[0].status === 'reviewing')
+
   // paid communities
   await c.query('reset role')
   const paid = (await c.query(`insert into public.communities (slug,name,price_amount,price_interval) values ('rls-paid','Paid',4900,'month') returning id`)).rows[0].id

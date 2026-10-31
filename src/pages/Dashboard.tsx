@@ -8,11 +8,12 @@ import { Avatar, Empty, ErrorNote, Spinner } from '../components/ui'
 import { useAuth } from '../lib/auth'
 import { supabase } from '../lib/supabase'
 import { CURRENCY_LABEL, INTERVAL_LABEL } from '../lib/payments'
-import type { CommunityOverview, Currency, MemberStats, PlatformUser, PriceInterval, Role } from '../lib/types'
+import type { CommunityOverview, Currency, MemberStats, PlatformUser, PriceInterval, RequestItem, Role } from '../lib/types'
+import { REQUEST_KIND, REQUEST_STATUS } from './Suggest'
 import { formatNumber, timeAgo } from '../lib/utils'
 import { exportMembers } from './CommunitySettings'
 
-type Tab = 'communities' | 'users'
+type Tab = 'communities' | 'users' | 'requests'
 const roleLabel: Record<Role, string> = { owner: 'مؤسس', admin: 'مدير', moderator: 'مشرف', member: 'عضو' }
 
 function useOverview() {
@@ -180,6 +181,63 @@ function Communities() {
   )
 }
 
+type RequestRow = RequestItem & { profile: { display_name: string; avatar_url: string | null } | null }
+
+function useRequests() {
+  return useQuery({
+    queryKey: ['requests', 'all'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('requests').select('*, profile:profiles!requests_user_id_fkey(display_name, avatar_url)').order('created_at', { ascending: false }).limit(500)
+      if (error) throw error
+      return data as unknown as RequestRow[]
+    },
+  })
+}
+
+function Requests() {
+  const qc = useQueryClient()
+  const requests = useRequests()
+  const [filter, setFilter] = useState<'open' | 'all'>('open')
+  const setStatus = useMutation({
+    mutationFn: async ({ id, status }: { id: string; status: RequestItem['status'] }) => {
+      const { error } = await supabase.from('requests').update({ status }).eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['requests'] }),
+  })
+  if (requests.isLoading) return <Spinner />
+  const rows = (requests.data ?? []).filter((r) => filter === 'all' || r.status === 'new' || r.status === 'reviewing')
+  return (
+    <div className="space-y-4">
+      <div className="inline-flex rounded-md border border-line bg-white p-1" role="tablist" aria-label="تصفية الطلبات">
+        {([['open', 'المفتوحة'], ['all', 'الكل']] as const).map(([k, label]) => (
+          <button key={k} role="tab" aria-selected={filter === k} onClick={() => setFilter(k)}
+            className={`cursor-pointer rounded-[5px] px-3.5 py-1.5 text-sm font-semibold transition-colors ${filter === k ? 'bg-brand text-white' : 'text-muted hover:text-brand'}`}>{label}</button>
+        ))}
+      </div>
+      <ErrorNote error={requests.error ?? setStatus.error} />
+      {!rows.length ? <Empty title="لا توجد طلبات هنا" /> : (
+        <ul className="card divide-y divide-line">
+          {rows.map((r) => (
+            <li key={r.id} className="flex flex-wrap items-start gap-3 px-5 py-4">
+              <Avatar name={r.profile?.display_name ?? '؟'} src={r.profile?.avatar_url} size={36} />
+              <div className="min-w-0 flex-1">
+                <p className="text-xs text-peri">{REQUEST_KIND[r.kind]} · {r.profile?.display_name ?? 'مستخدم'} · {timeAgo(r.created_at)}</p>
+                <p className="font-bold text-brand">{r.title}</p>
+                {r.body && <p className="mt-1 whitespace-pre-wrap text-sm leading-7 text-ink/85">{r.body}</p>}
+              </div>
+              <select className={`tag cursor-pointer border-0 py-1.5 ${REQUEST_STATUS[r.status].tone}`} value={r.status} aria-label="حالة الطلب"
+                onChange={(e) => setStatus.mutate({ id: r.id, status: e.target.value as RequestItem['status'] })}>
+                {(Object.keys(REQUEST_STATUS) as RequestItem['status'][]).map((k) => <option key={k} value={k}>{REQUEST_STATUS[k].label}</option>)}
+              </select>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
 function Users() {
   const { session } = useAuth()
   const qc = useQueryClient()
@@ -273,6 +331,7 @@ export default function Dashboard() {
   const [creating, setCreating] = useState(false)
   const overview = useOverview()
   const users = useUsers()
+  const requests = useRequests()
 
   const o = overview.data ?? []
   const sum = (k: keyof CommunityOverview) => o.reduce((s, c) => s + (Number(c[k]) || 0), 0)
@@ -304,8 +363,9 @@ export default function Dashboard() {
       </div>
 
       <TabBar<Tab> value={tab} onChange={(t) => setSp(t === 'communities' ? {} : { tab: t }, { replace: true })}
-        tabs={[{ id: 'communities', label: 'المجتمعات', count: o.length }, { id: 'users', label: 'المستخدمون', count: users.data?.length }]} />
-      {tab === 'communities' ? <Communities /> : <Users />}
+        tabs={[{ id: 'communities', label: 'المجتمعات', count: o.length }, { id: 'users', label: 'المستخدمون', count: users.data?.length },
+          { id: 'requests', label: 'الطلبات والاقتراحات', count: requests.data?.filter((r) => r.status === 'new').length }]} />
+      {tab === 'communities' ? <Communities /> : tab === 'users' ? <Users /> : <Requests />}
     </div>
   )
 }
