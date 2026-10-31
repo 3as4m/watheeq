@@ -3,6 +3,15 @@
 import { db, json, stripe } from './_shared.js'
 
 export async function POST(request: Request) {
+  try {
+    return await handle(request)
+  } catch (e) {
+    console.error('checkout failed', e)
+    return json({ error: `خدمة الدفع: ${e instanceof Error ? e.message : 'خطأ غير معروف'}` }, 500)
+  }
+}
+
+async function handle(request: Request) {
   const jwt = request.headers.get('authorization')?.replace(/^Bearer /, '')
   if (!jwt) return json({ error: 'سجل الدخول أولا' }, 401)
   const supabase = db(jwt)
@@ -23,7 +32,7 @@ export async function POST(request: Request) {
     mode: recurring ? 'subscription' : 'payment',
     customer_email: auth.user.email,
     client_reference_id: auth.user.id,
-    locale: 'ar',
+    locale: 'auto', // Checkout has no Arabic; follow the buyer's browser language
     line_items: [{
       quantity: 1,
       price_data: {

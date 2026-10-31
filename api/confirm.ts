@@ -3,6 +3,15 @@
 import { db, fulfillSession, json, stripe } from './_shared.js'
 
 export async function POST(request: Request) {
+  try {
+    return await handle(request)
+  } catch (e) {
+    console.error('confirm failed', e)
+    return json({ error: `خدمة الدفع: ${e instanceof Error ? e.message : 'خطأ غير معروف'}` }, 500)
+  }
+}
+
+async function handle(request: Request) {
   const jwt = request.headers.get('authorization')?.replace(/^Bearer /, '')
   const { data: auth } = jwt ? await db(jwt).auth.getUser(jwt) : { data: { user: null } }
   if (!auth.user) return json({ error: 'سجل الدخول أولا' }, 401)
