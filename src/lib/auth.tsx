@@ -75,6 +75,8 @@ export function useAuth() {
 /** Invite code picked up from /join/<code> before the visitor had an account. */
 export const PENDING_INVITE_KEY = 'watheeq-pending-invite'
 export const LAST_COMMUNITY_KEY = 'watheeq-last-community'
+/** Community a visitor picked on the landing page before signing up; opened right after. */
+export const PENDING_COMMUNITY_KEY = 'watheeq-pending-community'
 
 export function readStore(key: string) {
   try { return localStorage.getItem(key) } catch { return null }

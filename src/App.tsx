@@ -4,7 +4,7 @@ import { BrowserRouter, Navigate, Route, Routes, useParams } from 'react-router-
 import Layout, { PlainLayout } from './components/Layout'
 import WhatsAppButton from './components/WhatsApp'
 import { Spinner } from './components/ui'
-import { AuthProvider, LAST_COMMUNITY_KEY, PENDING_INVITE_KEY, readStore, useAuth, writeStore } from './lib/auth'
+import { AuthProvider, LAST_COMMUNITY_KEY, PENDING_COMMUNITY_KEY, PENDING_INVITE_KEY, readStore, useAuth, writeStore } from './lib/auth'
 import { CommunityCtx, type CommunityState } from './lib/community'
 import { supabase } from './lib/supabase'
 import type { Community } from './lib/types'
@@ -32,6 +32,8 @@ function Home() {
   const { memberships } = useAuth()
   const invite = readStore(PENDING_INVITE_KEY)
   if (invite) return <Navigate to={`/join/${invite}`} replace />
+  const picked = readStore(PENDING_COMMUNITY_KEY)
+  if (picked) { writeStore(PENDING_COMMUNITY_KEY, null); return <Navigate to={`/c/${picked}`} replace /> }
   const last = readStore(LAST_COMMUNITY_KEY)
   const target = memberships.find((m) => m.community.slug === last) ?? (memberships.length === 1 ? memberships[0] : undefined)
   if (target) return <Navigate to={`/c/${target.community.slug}`} replace />

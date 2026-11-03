@@ -1,14 +1,20 @@
-import { ArrowLeft, BookOpen, CalendarDays, MessagesSquare, Plus, Trophy, Users } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
+import { ArrowLeft, BookOpen, CalendarDays, Lock, MessagesSquare, Plus, Search, Trophy, Users } from 'lucide-react'
 import { useEffect, useRef, useState, type CSSProperties, type PointerEvent } from 'react'
 import { Link } from 'react-router-dom'
 import Intro from '../components/Intro'
-import { AccentHeading, Leaf, LogoHorizontal, LogoStacked, Mark, OutlineMark, PatternBand, SectionMeta } from '../components/brand'
-import { useAuth } from '../lib/auth'
+import { AccentHeading, CourseCover, Leaf, LogoHorizontal, LogoStacked, Mark, OutlineMark, PatternBand, SectionMeta } from '../components/brand'
+import { PENDING_COMMUNITY_KEY, useAuth, writeStore } from '../lib/auth'
+import { priceLabel } from '../lib/payments'
+import { supabase } from '../lib/supabase'
+import type { Currency, PriceInterval } from '../lib/types'
+import { formatNumber } from '../lib/utils'
 import { useReveal } from '../lib/useReveal'
 
 const anchors = [
   { href: '#about', label: 'عن وثيق' },
   { href: '#offer', label: 'ماذا نقدّم' },
+  { href: '#communities', label: 'المجتمعات' },
   { href: '#pillars', label: 'ركائزنا' },
   { href: '#join', label: 'كيف تنضم' },
   { href: '#faq', label: 'الأسئلة' },
@@ -204,6 +210,8 @@ export default function Landing() {
         </div>
       </section>
 
+      <CommunityDirectory />
+
       {/* Pillars: PDF page 8 colour columns */}
       <section id="pillars" className="scroll-mt-20">
         <div className="grid lg:min-h-[640px] lg:grid-cols-[1.25fr_1fr_1fr_1fr]">
@@ -244,7 +252,7 @@ export default function Landing() {
       {/* How to join + member card: PDF page 11 */}
       <section id="join" className="scroll-mt-20 bg-white">
         <div className="mx-auto max-w-6xl px-4 py-20 sm:px-6 lg:py-28">
-          <div data-reveal><SectionMeta label="كيف تنضم" n="03" /></div>
+          <div data-reveal><SectionMeta label="كيف تنضم" n="04" /></div>
           <div data-reveal className="mt-14 grid items-center gap-16 lg:grid-cols-[1.2fr_1fr]">
             <div>
               <AccentHeading>
@@ -271,7 +279,7 @@ export default function Landing() {
       {/* FAQ */}
       <section id="faq" className="scroll-mt-20">
         <div className="mx-auto max-w-6xl px-4 py-20 sm:px-6 lg:py-28">
-          <div data-reveal><SectionMeta label="الأسئلة الشائعة" n="04" /></div>
+          <div data-reveal><SectionMeta label="الأسئلة الشائعة" n="05" /></div>
           <div data-reveal className="mt-14 grid gap-12 lg:grid-cols-[1fr_1.6fr]">
             <h2 className="text-[clamp(2.4rem,5vw,3.8rem)] font-bold leading-[1.15] text-brand">أسئلة<br /><span className="font-medium">قبل الانضمام</span></h2>
             <div className="border-t border-line">
@@ -347,5 +355,97 @@ function MemberCards() {
         <PatternBand className="h-12" framed={false} />
       </div>
     </div>
+  )
+}
+
+interface DirectoryRow {
+  id: string; slug: string; name: string; tagline: string | null; about: string | null; cover_url: string | null
+  price_amount: number | null; price_currency: Currency; price_interval: PriceInterval | null
+  member_count: number; course_count: number; upcoming_events: number
+}
+
+/** Browse the public communities. Cards load after mount, so they animate in with animate-rise
+ *  rather than [data-reveal] (which only observes elements present on first render). */
+function CommunityDirectory() {
+  const { session } = useAuth()
+  const [q, setQ] = useState('')
+  const dir = useQuery({
+    queryKey: ['directory'],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('community_directory')
+      if (error) throw error
+      return data as DirectoryRow[]
+    },
+  })
+  const all = dir.data ?? []
+  const term = q.trim()
+  const rows = term ? all.filter((c) => c.name.includes(term) || (c.tagline ?? '').includes(term) || (c.about ?? '').includes(term)) : all
+  const open = (slug: string) => { if (!session) writeStore(PENDING_COMMUNITY_KEY, slug) }
+
+  return (
+    <section id="communities" className="scroll-mt-20">
+      <div className="mx-auto max-w-6xl px-4 py-20 sm:px-6 lg:py-28">
+        <div data-reveal><SectionMeta label="تصفّح المجتمعات" n="03" /></div>
+        <div data-reveal className="mt-12 grid gap-8 lg:grid-cols-[1fr_1fr] lg:items-end">
+          <AccentHeading>
+            <h2 className="text-[clamp(2.4rem,6vw,4.2rem)] font-bold leading-[1.15] text-brand">اختر مجتمعك<br /><span className="font-medium">وابدأ رحلتك</span></h2>
+          </AccentHeading>
+          <div className="space-y-4 lg:justify-self-end">
+            <p className="max-w-md text-lg text-muted">لكل مرحلة ولكل اهتمام مجتمع: دورات منظمة، ولقاءات مباشرة، وأسر تشاركك الطريق نفسه.</p>
+            {all.length > 6 && (
+              <div className="relative max-w-md">
+                <Search className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-peri" />
+                <input className="input ps-9" placeholder="ابحث عن مجتمع..." value={q} onChange={(e) => setQ(e.target.value)} aria-label="ابحث عن مجتمع" />
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="mt-14">
+          {dir.isLoading ? (
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3" aria-hidden="true">
+              {[0, 1, 2].map((i) => <div key={i} className="h-80 animate-pulse rounded-lg border border-line bg-white" />)}
+            </div>
+          ) : dir.error ? (
+            <p className="text-muted">تعذر تحميل المجتمعات الآن.</p>
+          ) : !rows.length ? (
+            <p className="text-muted">{term ? 'لا يوجد مجتمع بهذا الاسم.' : 'ستظهر المجتمعات هنا قريبًا.'}</p>
+          ) : (
+            <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {rows.map((c, i) => {
+                const price = priceLabel(c)
+                return (
+                  <li key={c.id} className="animate-rise" style={{ animationDelay: `${Math.min(i, 8) * 70}ms` }}>
+                    <Link to={session ? `/c/${c.slug}` : '/signup'} onClick={() => open(c.slug)}
+                      className="card card-hover group flex h-full flex-col overflow-hidden">
+                      <div className="relative aspect-[16/8] overflow-hidden">
+                        {c.cover_url ? <img src={c.cover_url} alt="" className="size-full object-cover" loading="lazy" /> : <CourseCover index={i} />}
+                        <span className={`tag absolute end-3 top-3 ${price ? 'bg-mint text-brand-dark' : 'bg-white text-brand'}`}>
+                          {price ? <><Lock className="size-3" />{price}</> : 'مجاني'}
+                        </span>
+                      </div>
+                      <div className="flex flex-1 flex-col p-6">
+                        <h3 className="text-xl font-bold leading-snug text-brand">{c.name}</h3>
+                        {c.tagline && <p className="mt-1 text-sm font-medium text-mint-deep">{c.tagline}</p>}
+                        {c.about && <p className="mt-3 line-clamp-3 text-[15px] leading-7 text-muted">{c.about}</p>}
+                        <div className="mt-auto flex flex-wrap gap-x-5 gap-y-1 border-t border-line pt-4 text-sm text-muted">
+                          <div className="flex items-center gap-1.5"><Users className="size-4 text-peri" /><span className="font-semibold text-brand tabular-nums">{formatNumber(c.member_count)}</span><span>عضو</span></div>
+                          {c.course_count > 0 && <div className="flex items-center gap-1.5"><BookOpen className="size-4 text-peri" /><span className="font-semibold text-brand tabular-nums">{formatNumber(c.course_count)}</span><span>دورة</span></div>}
+                          {c.upcoming_events > 0 && <div className="flex items-center gap-1.5"><CalendarDays className="size-4 text-peri" /><span className="font-semibold text-brand tabular-nums">{formatNumber(c.upcoming_events)}</span><span>لقاء قادم</span></div>}
+                        </div>
+                        <span className="mt-5 inline-flex items-center gap-1.5 text-sm font-bold text-brand">
+                          {session ? 'ادخل المجتمع' : price ? 'اشترك الآن' : 'انضم مجانًا'}
+                          <ArrowLeft className="size-4 transition-transform duration-300 group-hover:-translate-x-1" />
+                        </span>
+                      </div>
+                    </Link>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+        </div>
+      </div>
+    </section>
   )
 }
